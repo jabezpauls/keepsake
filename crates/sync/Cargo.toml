@@ -1,0 +1,18 @@
+[package]
+name = "mv-sync"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Media Vault peer sync (Phase 3). Stub in Phase 1."
+
+[lib]
+name = "mv_sync"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true

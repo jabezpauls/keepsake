@@ -1,0 +1,55 @@
+[package]
+name = "mv-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Media Vault core library: crypto, CAS, schema, ingest, media."
+
+[lib]
+name = "mv_core"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+tokio = { workspace = true }
+async-trait.workspace = true
+
+libsodium-sys-stable.workspace = true
+blake3.workspace = true
+zeroize.workspace = true
+secrecy.workspace = true
+subtle.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+bytes.workspace = true
+hex.workspace = true
+base32.workspace = true
+
+rusqlite.workspace = true
+
+image.workspace = true
+libheif-rs.workspace = true
+nom-exif.workspace = true
+kamadak-exif.workspace = true
+ffmpeg-next.workspace = true
+rawloader.workspace = true
+
+walkdir.workspace = true
+globset.workspace = true
+mime.workspace = true
+infer.workspace = true
+
+ts-rs.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true
+tracing-subscriber.workspace = true

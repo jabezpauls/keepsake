@@ -1,0 +1,24 @@
+[build]
+# Keep incremental for dev; release builds turn it off.
+incremental = true
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+incremental = false
+
+# Profile for the Tauri dev build — app-side.
+[profile.dev.package."*"]
+opt-level = 1
+
+[env]
+# Ensure pkg-config-based crates discover system libs predictably.
+PKG_CONFIG_ALLOW_SYSTEM_CFLAGS = "1"
+PKG_CONFIG_ALLOW_SYSTEM_LIBS = "1"

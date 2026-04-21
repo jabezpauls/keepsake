@@ -1,0 +1,80 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/sync",
+    "app/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/jabezpauls/media-view"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+# Too noisy at foundation stage; re-enable as the API stabilises.
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+similar_names = "allow"
+
+[workspace.dependencies]
+# Error / logging / async
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Crypto primitives
+libsodium-sys-stable = "1.22"
+blake3 = "1.5"
+zeroize = { version = "1.8", features = ["derive"] }
+secrecy = { version = "0.10", features = ["serde"] }
+subtle = "2"
+
+# Data / serde
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+bytes = "1"
+hex = "0.4"
+base32 = "0.5"
+
+# DB
+rusqlite = { version = "0.32", features = ["bundled", "blob", "hooks", "modern_sqlite", "load_extension"] }
+
+# Media
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "tiff"] }
+libheif-rs = { version = "2.7", default-features = false, features = ["v1_17"] }
+nom-exif = "2"
+kamadak-exif = "0.6"
+ffmpeg-next = "7.1"
+rawloader = "0.37"
+
+# Ingest helpers
+walkdir = "2"
+globset = "0.4"
+mime = "0.3"
+infer = "0.19"
+notify = "7"
+
+# Tests
+proptest = "1"
+tempfile = "3"
+
+# Tauri IPC codegen
+ts-rs = { version = "10", features = ["chrono-impl", "serde-compat"] }
