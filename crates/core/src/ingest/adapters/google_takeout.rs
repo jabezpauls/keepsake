@@ -28,7 +28,9 @@ pub struct GoogleTakeoutAdapter {
 
 impl GoogleTakeoutAdapter {
     pub fn new() -> Self {
-        Self { inner: GenericAdapter::new() }
+        Self {
+            inner: GenericAdapter::new(),
+        }
     }
 }
 
@@ -109,15 +111,8 @@ fn reconstruct_xmp_from_takeout(media: &Path, existing_sidecar: &Path) -> Result
             }
         }
     }
-    fields.persons = meta
-        .people
-        .into_iter()
-        .filter_map(|p| p.name)
-        .collect();
-    fields.album = meta
-        .description
-        .as_deref()
-        .and_then(|_| None);
+    fields.persons = meta.people.into_iter().filter_map(|p| p.name).collect();
+    fields.album = meta.description.as_deref().and_then(|_| None);
 
     // Drop-in: write <media>.xmp only if not already present.
     let mut target_xmp = media.to_path_buf();
@@ -159,7 +154,11 @@ impl IngestAdapter for GoogleTakeoutAdapter {
             .flatten()
             .filter(|e| e.file_type().is_file())
             .map(|e| e.path().to_path_buf())
-            .filter(|p| !p.extension().map(|e| e == "json" || e == "xmp").unwrap_or(false))
+            .filter(|p| {
+                !p.extension()
+                    .map(|e| e == "json" || e == "xmp")
+                    .unwrap_or(false)
+            })
             .collect();
         let mut reconstructed = 0u64;
         for media in &paths {
@@ -188,7 +187,8 @@ mod tests {
             image::ImageBuffer::from_fn(8, 6, |x, y| {
                 image::Rgb([(x as u8).wrapping_add(seed), y as u8, 0])
             });
-        img.save_with_format(path, image::ImageFormat::Jpeg).unwrap();
+        img.save_with_format(path, image::ImageFormat::Jpeg)
+            .unwrap();
     }
 
     #[test]

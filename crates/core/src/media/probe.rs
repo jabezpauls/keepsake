@@ -172,7 +172,10 @@ fn probe_raw(path: &Path, probe: &mut MediaProbe) -> Result<()> {
             probe.height = Some(img.height as u32);
             probe.device = Some(format!("{} {}", img.make, img.model).trim().to_string());
         }
-        Err(e) => tracing::debug!(?e, "rawloader decode failed — falling back to flag-only RAW"),
+        Err(e) => tracing::debug!(
+            ?e,
+            "rawloader decode failed — falling back to flag-only RAW"
+        ),
     }
     Ok(())
 }
@@ -195,7 +198,10 @@ fn probe_exif(path: &Path, probe: &mut MediaProbe) -> Result<()> {
 
     for f in exif.fields() {
         let key = format!("{}::{}", f.ifd_num, f.tag);
-        j.insert(key, serde_json::Value::String(f.display_value().to_string()));
+        j.insert(
+            key,
+            serde_json::Value::String(f.display_value().to_string()),
+        );
     }
 
     let get = |t: exif::Tag, ifd: exif::In| {
@@ -230,14 +236,12 @@ fn probe_exif(path: &Path, probe: &mut MediaProbe) -> Result<()> {
     for tag in [exif::Tag::DateTimeOriginal, exif::Tag::DateTime] {
         if let Some(f) = exif.get_field(tag, exif::In::PRIMARY) {
             let s = f.display_value().to_string();
-            if let Ok(dt) =
-                NaiveDateTime::parse_from_str(&s.trim_matches('"'), "%Y-%m-%d %H:%M:%S")
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s.trim_matches('"'), "%Y-%m-%d %H:%M:%S")
             {
                 probe.taken_at_utc = Some(dt.and_utc());
                 break;
             }
-            if let Ok(dt) =
-                NaiveDateTime::parse_from_str(&s.trim_matches('"'), "%Y:%m:%d %H:%M:%S")
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s.trim_matches('"'), "%Y:%m:%d %H:%M:%S")
             {
                 probe.taken_at_utc = Some(dt.and_utc());
                 break;
@@ -253,10 +257,18 @@ fn probe_exif(path: &Path, probe: &mut MediaProbe) -> Result<()> {
         exif.get_field(exif::Tag::GPSLongitudeRef, exif::In::PRIMARY),
     ) {
         let lat = dms_to_decimal(&lat.value).map(|d| {
-            if latref.display_value().to_string().contains('S') { -d } else { d }
+            if latref.display_value().to_string().contains('S') {
+                -d
+            } else {
+                d
+            }
         });
         let lon = dms_to_decimal(&lon.value).map(|d| {
-            if lonref.display_value().to_string().contains('W') { -d } else { d }
+            if lonref.display_value().to_string().contains('W') {
+                -d
+            } else {
+                d
+            }
         });
         let alt = exif
             .get_field(exif::Tag::GPSAltitude, exif::In::PRIMARY)
@@ -320,8 +332,12 @@ fn probe_video(path: &Path, probe: &mut MediaProbe) -> Result<()> {
             if let Ok(video) = decoder.decoder().video() {
                 let w = video.width();
                 let h = video.height();
-                if w > 0 { probe.width = Some(w); }
-                if h > 0 { probe.height = Some(h); }
+                if w > 0 {
+                    probe.width = Some(w);
+                }
+                if h > 0 {
+                    probe.height = Some(h);
+                }
             }
         }
     }
@@ -343,7 +359,11 @@ fn looks_like_screenshot(path: &Path, mime: &str) -> bool {
         return true;
     }
     // Parent dir named 'Screenshots' (Android).
-    if let Some(parent) = path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) {
+    if let Some(parent) = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+    {
         if parent.eq_ignore_ascii_case("Screenshots") {
             return true;
         }
@@ -365,9 +385,8 @@ mod tests {
 
     fn tiny_jpeg(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
         let p = dir.join(name);
-        let img: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::from_fn(8, 6, |x, y| {
-            Rgb([(x * 32) as u8, (y * 48) as u8, 128])
-        });
+        let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
+            ImageBuffer::from_fn(8, 6, |x, y| Rgb([(x * 32) as u8, (y * 48) as u8, 128]));
         img.save_with_format(&p, image::ImageFormat::Jpeg).unwrap();
         p
     }

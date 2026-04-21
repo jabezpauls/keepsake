@@ -94,7 +94,8 @@ fn parse(body: &str) -> Result<XmpFields> {
     // exif:GPS — XMP encodes as "47,37.45N" (deg,min+frac ref).
     if let (Some(lat), Some(lon)) = (
         extract_attr(body, "exif:GPSLatitude").or_else(|| extract_simple(body, "exif:GPSLatitude")),
-        extract_attr(body, "exif:GPSLongitude").or_else(|| extract_simple(body, "exif:GPSLongitude")),
+        extract_attr(body, "exif:GPSLongitude")
+            .or_else(|| extract_simple(body, "exif:GPSLongitude")),
     ) {
         if let (Some(la), Some(lo)) = (parse_xmp_gps(&lat), parse_xmp_gps(&lon)) {
             out.gps = Some((la, lo));
@@ -151,7 +152,9 @@ fn extract_bag(body: &str, tag: &str) -> Vec<String> {
         // skip to '>'
         let Some(close) = after.find('>') else { break };
         let after = &after[close + 1..];
-        let Some(end) = after.find("</rdf:li>") else { break };
+        let Some(end) = after.find("</rdf:li>") else {
+            break;
+        };
         out.push(decode_xml(after[..end].trim()));
         rest = &after[end + "</rdf:li>".len()..];
     }
@@ -202,7 +205,11 @@ fn parse_xmp_gps(s: &str) -> Option<f64> {
 fn format_xmp_gps(v: f64, axis_ns: bool) -> String {
     // axis_ns = true  → "N/S"
     // axis_ns = false → "E/W"
-    let (abs, sign) = if v < 0.0 { (-v, if axis_ns { 'S' } else { 'W' }) } else { (v, if axis_ns { 'N' } else { 'E' }) };
+    let (abs, sign) = if v < 0.0 {
+        (-v, if axis_ns { 'S' } else { 'W' })
+    } else {
+        (v, if axis_ns { 'N' } else { 'E' })
+    };
     let deg = abs.trunc();
     let min = (abs - deg) * 60.0;
     format!("{:.0},{:.4}{}", deg, min, sign)

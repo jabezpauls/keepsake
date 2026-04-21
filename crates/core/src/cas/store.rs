@@ -46,7 +46,9 @@ impl CasStore {
         let cas = root.join(CAS_SUBDIR);
         fs::create_dir_all(cas.join(TMP_SUBDIR))?;
         fs::create_dir_all(cas.join(TRASH_SUBDIR))?;
-        Ok(Self { root: root.to_path_buf() })
+        Ok(Self {
+            root: root.to_path_buf(),
+        })
     }
 
     /// Encrypt `plaintext` with `file_key`, write it into the CAS keyed by the
@@ -60,11 +62,11 @@ impl CasStore {
     /// Streaming version: consume `src`, hash it as it flows past, and write
     /// the encrypted bytes to disk atomically. Returns `(hash, bytes_read)`.
     pub fn put_streaming<R: Read>(&self, src: R, file_key: &FileKey) -> Result<(String, u64)> {
-        let tmp = self.cas_dir().join(TMP_SUBDIR).join(Uuid::new_v4().to_string());
-        let file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&tmp)?;
+        let tmp = self
+            .cas_dir()
+            .join(TMP_SUBDIR)
+            .join(Uuid::new_v4().to_string());
+        let file = OpenOptions::new().create_new(true).write(true).open(&tmp)?;
 
         let mut hasher = blake3::Hasher::new();
         let mut writer = BufWriter::new(file);
@@ -310,9 +312,7 @@ mod tests {
         let (_d, store) = mk_store();
         let fk = FileKey::random().unwrap();
         let pt: Vec<u8> = (0u32..500_000).map(|i| (i % 251) as u8).collect();
-        let (hash, bytes) = store
-            .put_streaming(std::io::Cursor::new(&pt), &fk)
-            .unwrap();
+        let (hash, bytes) = store.put_streaming(std::io::Cursor::new(&pt), &fk).unwrap();
         assert_eq!(bytes as usize, pt.len());
         let h2 = hex::encode(blake3::hash(&pt).as_bytes());
         assert_eq!(hash, h2);

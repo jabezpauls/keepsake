@@ -285,19 +285,29 @@ mod tests {
     fn create_and_unlock_round_trip() {
         let (record, created) = create_user("alice", &pw("hunter2-hunter2-hunter2")).unwrap();
         let unlocked = unlock(&record, &pw("hunter2-hunter2-hunter2"), 7).unwrap();
-        assert_eq!(created.master_key.as_bytes(), unlocked.master_key.as_bytes());
+        assert_eq!(
+            created.master_key.as_bytes(),
+            unlocked.master_key.as_bytes()
+        );
         assert_eq!(created.identity.public.0, unlocked.identity.public.0);
         assert_eq!(created.iroh_node.public.0, unlocked.iroh_node.public.0);
         assert_eq!(unlocked.user_id, 7);
         // Username decrypts to the input.
-        let pt = super::super::envelope::open_row(&record.username_ct, 0, unlocked.master_key.as_bytes()).unwrap();
+        let pt = super::super::envelope::open_row(
+            &record.username_ct,
+            0,
+            unlocked.master_key.as_bytes(),
+        )
+        .unwrap();
         assert_eq!(pt, b"alice");
     }
 
     #[test]
     fn wrong_password_is_opaque() {
         let (record, _) = create_user("alice", &pw("correct-horse-battery-staple")).unwrap();
-        let err = unlock(&record, &pw("wrong-horse-battery-staple"), 1).err().unwrap();
+        let err = unlock(&record, &pw("wrong-horse-battery-staple"), 1)
+            .err()
+            .unwrap();
         assert!(matches!(err, Error::KeyOrData));
     }
 
@@ -308,20 +318,30 @@ mod tests {
         // have hidden_wrapped_master_key of the same length.
         let (a, _) = create_user("a", &pw("password-a-password-a")).unwrap();
         let (b, _) = create_user("b", &pw("password-b-password-b")).unwrap();
-        assert_eq!(a.hidden_wrapped_master_key.len(), b.hidden_wrapped_master_key.len());
+        assert_eq!(
+            a.hidden_wrapped_master_key.len(),
+            b.hidden_wrapped_master_key.len()
+        );
         // And the same length as a real wrapped master key.
-        assert_eq!(a.hidden_wrapped_master_key.len(), a.wrapped_master_key.len());
+        assert_eq!(
+            a.hidden_wrapped_master_key.len(),
+            a.wrapped_master_key.len()
+        );
     }
 
     #[test]
     fn hidden_vault_set_and_unlock() {
-        let (mut record, mut unlocked) =
-            create_user("alice", &pw("main-main-main-main")).unwrap();
+        let (mut record, mut unlocked) = create_user("alice", &pw("main-main-main-main")).unwrap();
         // Initially no hidden vault.
         assert!(unlocked.hidden_master_key.is_none());
         // Setting it populates the in-memory field and the record.
         set_hidden_vault_password(&mut record, &mut unlocked, &pw("hidden-hidden-hidden")).unwrap();
-        let hidden_before = unlocked.hidden_master_key.as_ref().unwrap().as_bytes().to_vec();
+        let hidden_before = unlocked
+            .hidden_master_key
+            .as_ref()
+            .unwrap()
+            .as_bytes()
+            .to_vec();
 
         // Simulate lock + re-unlock cycle: main unlock does NOT carry hidden.
         let mut re_unlocked = unlock(&record, &pw("main-main-main-main"), 1).unwrap();
@@ -329,16 +349,20 @@ mod tests {
 
         // Correct hidden password recovers the same key bytes.
         unlock_hidden_vault(&record, &mut re_unlocked, &pw("hidden-hidden-hidden")).unwrap();
-        assert_eq!(re_unlocked.hidden_master_key.as_ref().unwrap().as_bytes(), hidden_before.as_slice());
+        assert_eq!(
+            re_unlocked.hidden_master_key.as_ref().unwrap().as_bytes(),
+            hidden_before.as_slice()
+        );
     }
 
     #[test]
     fn wrong_hidden_password_fails_opaquely() {
-        let (mut record, mut unlocked) =
-            create_user("alice", &pw("main-main-main-main")).unwrap();
+        let (mut record, mut unlocked) = create_user("alice", &pw("main-main-main-main")).unwrap();
         set_hidden_vault_password(&mut record, &mut unlocked, &pw("hidden-hidden-hidden")).unwrap();
         let mut re = unlock(&record, &pw("main-main-main-main"), 1).unwrap();
-        let err = unlock_hidden_vault(&record, &mut re, &pw("not-the-hidden-pw")).err().unwrap();
+        let err = unlock_hidden_vault(&record, &mut re, &pw("not-the-hidden-pw"))
+            .err()
+            .unwrap();
         assert!(matches!(err, Error::KeyOrData));
         assert!(re.hidden_master_key.is_none());
     }
@@ -349,14 +373,17 @@ mod tests {
         // will never authenticate. Any password must fail with KeyOrData —
         // not a different error — so an adversary can't detect absence.
         let (record, mut unlocked) = create_user("a", &pw("aaaaaaaaaaaaaaaa")).unwrap();
-        let err = unlock_hidden_vault(&record, &mut unlocked, &pw("try-this-pw-try-this")).err().unwrap();
+        let err = unlock_hidden_vault(&record, &mut unlocked, &pw("try-this-pw-try-this"))
+            .err()
+            .unwrap();
         assert!(matches!(err, Error::KeyOrData));
     }
 
     #[test]
     fn album_password_round_trip() {
         let ck = CollectionKey::random().unwrap();
-        let (wrapped, salt) = wrap_collection_key_for_album(&ck, &pw("beach-2024-pictures")).unwrap();
+        let (wrapped, salt) =
+            wrap_collection_key_for_album(&ck, &pw("beach-2024-pictures")).unwrap();
         let ck2 = unlock_album(&wrapped, &pw("beach-2024-pictures"), &salt).unwrap();
         assert_eq!(ck.as_bytes(), ck2.as_bytes());
     }
@@ -365,7 +392,9 @@ mod tests {
     fn album_password_wrong_fails() {
         let ck = CollectionKey::random().unwrap();
         let (wrapped, salt) = wrap_collection_key_for_album(&ck, &pw("right-password-xx")).unwrap();
-        let err = unlock_album(&wrapped, &pw("wrong-password-xx"), &salt).err().unwrap();
+        let err = unlock_album(&wrapped, &pw("wrong-password-xx"), &salt)
+            .err()
+            .unwrap();
         assert!(matches!(err, Error::KeyOrData));
     }
 }

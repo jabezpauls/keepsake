@@ -2472,8 +2472,12 @@ name = "mv-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
+ "hex",
  "mv-core",
  "mv-sync",
+ "rusqlite",
+ "secrecy",
  "serde",
  "serde_json",
  "tauri",
@@ -2481,9 +2485,11 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tauri-plugin-shell",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "ts-rs",
 ]
 
 [[package]]

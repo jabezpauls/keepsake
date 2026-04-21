@@ -51,8 +51,7 @@ pub struct ThumbnailOutput {
 /// Returns an empty Vec for any format the `image` crate can't decode.
 /// Video proxies are handled by [`derive_video_keyframe`] instead.
 pub fn derive_thumbnails(path: &Path) -> Result<Vec<ThumbnailOutput>> {
-    let img = match image::ImageReader::open(path)
-        .and_then(|r| Ok(r.with_guessed_format()?))
+    let img = match image::ImageReader::open(path).and_then(image::ImageReader::with_guessed_format)
     {
         Ok(reader) => match reader.decode() {
             Ok(img) => img,

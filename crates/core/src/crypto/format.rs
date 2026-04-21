@@ -29,9 +29,8 @@ pub fn parse_blob_prelude(buf: &[u8]) -> Result<&[u8; SECRETSTREAM_HEADER_LEN]> 
         return Err(Error::BlobFormat);
     }
     let header_slice: &[u8] = &buf[MAGIC_LEN..MAGIC_LEN + SECRETSTREAM_HEADER_LEN];
-    let header: &[u8; SECRETSTREAM_HEADER_LEN] = header_slice
-        .try_into()
-        .map_err(|_| Error::BlobFormat)?;
+    let header: &[u8; SECRETSTREAM_HEADER_LEN] =
+        header_slice.try_into().map_err(|_| Error::BlobFormat)?;
     Ok(header)
 }
 

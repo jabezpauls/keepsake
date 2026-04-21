@@ -1,8 +1,17 @@
 //! Media Vault Tauri shell.
 //!
-//! Phase-1 scaffolding. IPC commands are populated in Step 11 of the
-//! execution plan; the runner exists here so `cargo check` and `tauri dev`
-//! launch an empty window.
+//! Responsibilities:
+//!
+//! 1. Register IPC commands defined in `commands/`.
+//! 2. Own the `AppState` (session + key material) for the lifetime of the window.
+//! 3. Initialise tracing so mv-core logs flow to stderr.
+
+pub mod commands;
+pub mod dto;
+pub mod errors;
+pub mod state;
+
+use state::{default_vault_root, AppState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,10 +22,33 @@ pub fn run() {
         )
         .init();
 
+    let app_state = AppState::new(default_vault_root());
+
     tauri::Builder::default()
+        .manage(app_state)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![
+            commands::auth::user_exists,
+            commands::auth::create_user,
+            commands::auth::unlock,
+            commands::auth::lock,
+            commands::auth::unlock_hidden,
+            commands::sources::add_source,
+            commands::sources::list_sources,
+            commands::sources::ingest_status,
+            commands::timeline::timeline_page,
+            commands::timeline::asset_detail,
+            commands::timeline::asset_thumbnail,
+            commands::timeline::asset_original,
+            commands::albums::create_album,
+            commands::albums::list_albums,
+            commands::albums::unlock_album,
+            commands::albums::album_page,
+            commands::albums::add_to_album,
+            commands::export::export_album,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

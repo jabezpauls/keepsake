@@ -18,7 +18,15 @@ pub fn register_source(
     linked_only: bool,
     imported_at: i64,
 ) -> Result<i64> {
-    db::insert_source(conn, owner_id, name_ct, root_path_ct, device_hint_ct, linked_only, imported_at)
+    db::insert_source(
+        conn,
+        owner_id,
+        name_ct,
+        root_path_ct,
+        device_hint_ct,
+        linked_only,
+        imported_at,
+    )
 }
 
 /// Record a physical location for an asset. Safe to call multiple times per
@@ -65,11 +73,27 @@ mod tests {
         let sid = register_source(&conn, uid, b"s", b"p", None, false, 0).unwrap();
         let hash = [3u8; 32];
         let a = db::AssetInsert {
-            blake3_plaintext: &hash, mime: "image/jpeg", bytes: 0, width: None, height: None,
-            duration_ms: None, taken_at_utc_day: None, is_video: false, is_raw: false,
-            is_screenshot: false, is_live: false, is_motion: false, source_id: sid,
-            cas_ref: "x", imported_at: 0, filename_ct: b"f", taken_at_utc_ct: None,
-            gps_ct: None, device_ct: None, lens_ct: None, exif_all_ct: None,
+            blake3_plaintext: &hash,
+            mime: "image/jpeg",
+            bytes: 0,
+            width: None,
+            height: None,
+            duration_ms: None,
+            taken_at_utc_day: None,
+            is_video: false,
+            is_raw: false,
+            is_screenshot: false,
+            is_live: false,
+            is_motion: false,
+            source_id: sid,
+            cas_ref: "x",
+            imported_at: 0,
+            filename_ct: b"f",
+            taken_at_utc_ct: None,
+            gps_ct: None,
+            device_ct: None,
+            lens_ct: None,
+            exif_all_ct: None,
             wrapped_file_key: b"w",
         };
         let aid = match db::insert_asset_if_new(&conn, &a).unwrap() {
@@ -79,7 +103,11 @@ mod tests {
         record_location(&conn, aid, sid, b"path-1", 1).unwrap();
         record_location(&conn, aid, sid, b"path-2", 2).unwrap();
         let n: i64 = conn
-            .query_row("SELECT COUNT(*) FROM asset_location WHERE asset_id = ?1", [aid], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM asset_location WHERE asset_id = ?1",
+                [aid],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(n, 2);
     }

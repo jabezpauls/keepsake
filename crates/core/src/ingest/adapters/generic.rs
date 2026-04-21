@@ -6,7 +6,7 @@
 //!
 //! This is the shared core used by the iPhone + Takeout adapters (Step 10).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use chrono::Utc;
 use walkdir::WalkDir;
@@ -57,9 +57,11 @@ impl IngestAdapter for GenericAdapter {
         let ck = ctx.default_collection_key.clone();
         let root = root.to_path_buf();
 
-        tokio::task::spawn_blocking(move || ingest_blocking(&root, source_id, &cas, &db, &ck, &progress))
-            .await
-            .map_err(|e| Error::Ingest(format!("ingest join: {e}")))?
+        tokio::task::spawn_blocking(move || {
+            ingest_blocking(&root, source_id, &cas, &db, &ck, &progress)
+        })
+        .await
+        .map_err(|e| Error::Ingest(format!("ingest join: {e}")))?
     }
 }
 
@@ -78,7 +80,10 @@ fn scan_blocking(root: &Path) -> Result<ScanReport> {
             bytes += md.len();
         }
     }
-    Ok(ScanReport { file_count: count, total_bytes: bytes })
+    Ok(ScanReport {
+        file_count: count,
+        total_bytes: bytes,
+    })
 }
 
 fn ingest_blocking(
@@ -102,7 +107,11 @@ fn ingest_blocking(
         }
         let path = entry.path().to_path_buf();
         index += 1;
-        progress.send(ProgressEvent::FileStarted { path: path.clone(), index, total });
+        progress.send(ProgressEvent::FileStarted {
+            path: path.clone(),
+            index,
+            total,
+        });
 
         match ingest_one(&path, source_id, cas, db_mutex, collection_key) {
             Ok(FileOutcome::Inserted { asset_id, bytes }) => {
@@ -120,7 +129,10 @@ fn ingest_blocking(
             Err(e) => {
                 report.errors += 1;
                 tracing::warn!(?e, path = ?path, "ingest error — skipping file");
-                progress.send(ProgressEvent::FileSkipped { path, reason: format!("{e}") });
+                progress.send(ProgressEvent::FileSkipped {
+                    path,
+                    reason: format!("{e}"),
+                });
             }
         }
     }
@@ -130,9 +142,17 @@ fn ingest_blocking(
 }
 
 enum FileOutcome {
-    Inserted { asset_id: i64, bytes: u64 },
-    Existing { asset_id: i64 },
-    #[allow(dead_code, reason = "reserved for non-ingestable files found during scan")]
+    Inserted {
+        asset_id: i64,
+        bytes: u64,
+    },
+    Existing {
+        asset_id: i64,
+    },
+    #[allow(
+        dead_code,
+        reason = "reserved for non-ingestable files found during scan"
+    )]
     Skipped(String),
 }
 
@@ -162,7 +182,10 @@ fn ingest_one(
     //    final asset id; the AD is intentionally weak for bootstrap rows. On
     //    re-open we re-seal with the actual id in a maintenance pass (Phase 2).
     let hash: [u8; 32] = blake3::hash(&std::fs::read(path)?).as_bytes().to_owned();
-    let filename = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let filename = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let filename_ct = seal_row(filename.as_bytes(), 0, collection_key.as_bytes())?;
 
     let merged_exif = merge_exif(&probe, sidecar.as_ref());
@@ -248,14 +271,14 @@ fn ingest_one(
     };
 
     // 6. Generate thumbnails for freshly inserted visual assets.
+    //    Thumbs reuse the asset's FileKey: the derivative table's
+    //    (asset_id, kind, cas_ref) tuple implicitly binds them, and a single
+    //    `unwrap_file_key(wrapped_file_key, collection_key)` recovers the key
+    //    for both the original and its derivatives.
     if let Outcome::Inserted(id) = asset_id {
         if let Ok(thumbs) = derive_thumbnails(path) {
             for t in thumbs {
-                let tfk = FileKey::random()?;
-                let (tref, _) = cas.put_streaming(std::io::Cursor::new(&t.bytes), &tfk)?;
-                // Wrap the thumb key under the collection key so a Phase-1
-                // "show me a thumbnail" call only needs the collection key.
-                let _wrapped_tfk = wrap_file_key(&tfk, collection_key)?;
+                let (tref, _) = cas.put_streaming(std::io::Cursor::new(&t.bytes), &fk)?;
                 let guard = db_mutex.blocking_lock();
                 db::insert_derivative(&guard, id, t.size.as_derivative_kind(), &tref)?;
             }
@@ -263,7 +286,10 @@ fn ingest_one(
     }
 
     Ok(match asset_id {
-        Outcome::Inserted(id) => FileOutcome::Inserted { asset_id: id, bytes },
+        Outcome::Inserted(id) => FileOutcome::Inserted {
+            asset_id: id,
+            bytes,
+        },
         Outcome::Existing(id) => FileOutcome::Existing { asset_id: id },
     })
 }
@@ -278,7 +304,10 @@ fn merge_exif(probe: &MediaProbe, sidecar: Option<&super::super::sidecar::XmpFie
     obj.insert("mime".into(), serde_json::Value::String(probe.mime.clone()));
     obj.insert("exif".into(), probe.exif_all_json.clone());
     if let Some(s) = sidecar {
-        obj.insert("sidecar".into(), serde_json::to_value(s).unwrap_or(serde_json::Value::Null));
+        obj.insert(
+            "sidecar".into(),
+            serde_json::to_value(s).unwrap_or(serde_json::Value::Null),
+        );
     }
     serde_json::to_vec(&serde_json::Value::Object(obj)).unwrap_or_default()
 }
@@ -299,10 +328,29 @@ fn is_candidate(path: &Path) -> bool {
     matches!(
         ext.as_deref(),
         Some(
-            "jpg" | "jpeg" | "png" | "heic" | "heif" | "webp" | "bmp" | "gif"
-            | "tif" | "tiff"
-            | "mp4" | "mov" | "m4v" | "mkv" | "webm"
-            | "cr2" | "cr3" | "nef" | "arw" | "dng" | "raf" | "orf" | "rw2"
+            "jpg"
+                | "jpeg"
+                | "png"
+                | "heic"
+                | "heif"
+                | "webp"
+                | "bmp"
+                | "gif"
+                | "tif"
+                | "tiff"
+                | "mp4"
+                | "mov"
+                | "m4v"
+                | "mkv"
+                | "webm"
+                | "cr2"
+                | "cr3"
+                | "nef"
+                | "arw"
+                | "dng"
+                | "raf"
+                | "orf"
+                | "rw2"
         )
     )
 }
@@ -321,11 +369,21 @@ mod tests {
     use tempfile::TempDir;
     use tokio::sync::Mutex;
 
-    fn setup_vault() -> (TempDir, Arc<CasStore>, Arc<Mutex<rusqlite::Connection>>, i64, i64, Arc<CollectionKey>, Arc<keystore::UnlockedUser>) {
+    type Vault = (
+        TempDir,
+        Arc<CasStore>,
+        Arc<Mutex<rusqlite::Connection>>,
+        i64,
+        i64,
+        Arc<CollectionKey>,
+        Arc<keystore::UnlockedUser>,
+    );
+
+    fn setup_vault() -> Vault {
         let dir = TempDir::new().unwrap();
         let cas = Arc::new(CasStore::open(dir.path()).unwrap());
-        let mut conn = rusqlite::Connection::open(dir.path().join("index.db")).unwrap();
-        db::migrate::apply(&mut conn).unwrap();
+        let conn = rusqlite::Connection::open(dir.path().join("index.db")).unwrap();
+        db::migrate::apply(&conn).unwrap();
         let (record, unlocked) =
             keystore::create_user("u", &SecretString::from("very-long-password-xyz")).unwrap();
         let user_id = db::insert_user(&conn, &record, 0).unwrap();
@@ -335,12 +393,22 @@ mod tests {
 
         let ck = Arc::new(CollectionKey::random().unwrap());
         let source_id = db::insert_source(&conn, user_id, b"s", b"root", None, false, 0).unwrap();
-        (dir, cas, Arc::new(Mutex::new(conn)), user_id, source_id, ck, user)
+        (
+            dir,
+            cas,
+            Arc::new(Mutex::new(conn)),
+            user_id,
+            source_id,
+            ck,
+            user,
+        )
     }
 
     fn write_jpeg(p: &Path, seed: u8) {
         let img: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
-            image::ImageBuffer::from_fn(16, 12, |x, y| image::Rgb([(x as u8).wrapping_add(seed), y as u8, 0]));
+            image::ImageBuffer::from_fn(16, 12, |x, y| {
+                image::Rgb([(x as u8).wrapping_add(seed), y as u8, 0])
+            });
         img.save_with_format(p, image::ImageFormat::Jpeg).unwrap();
     }
 
@@ -351,7 +419,9 @@ mod tests {
         let b = root.path().join("b.png");
         let c = root.path().join("ignored.txt");
         write_jpeg(&a, 1);
-        image::RgbImage::new(8, 8).save_with_format(&b, image::ImageFormat::Png).unwrap();
+        image::RgbImage::new(8, 8)
+            .save_with_format(&b, image::ImageFormat::Png)
+            .unwrap();
         std::fs::write(&c, "hello").unwrap();
         let adapter = GenericAdapter::new();
         let r = adapter.scan(root.path()).await.unwrap();
@@ -390,18 +460,26 @@ mod tests {
 
         // Drain progress events for sanity; last event is Done.
         let mut last = None;
-        while let Ok(ev) = rx.try_recv() { last = Some(ev); }
+        while let Ok(ev) = rx.try_recv() {
+            last = Some(ev);
+        }
         assert!(matches!(last, Some(ProgressEvent::Done(_))));
 
         // Exactly 2 asset rows.
         let guard = conn.lock().await;
-        let n: i64 = guard.query_row("SELECT COUNT(*) FROM asset", [], |r| r.get(0)).unwrap();
+        let n: i64 = guard
+            .query_row("SELECT COUNT(*) FROM asset", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(n, 2);
         // 3 location rows (two distinct + one dedupe hit).
-        let loc: i64 = guard.query_row("SELECT COUNT(*) FROM asset_location", [], |r| r.get(0)).unwrap();
+        let loc: i64 = guard
+            .query_row("SELECT COUNT(*) FROM asset_location", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(loc, 3);
         // 4 thumbnail derivatives (2 inserted assets × 2 sizes each).
-        let d: i64 = guard.query_row("SELECT COUNT(*) FROM derivative", [], |r| r.get(0)).unwrap();
+        let d: i64 = guard
+            .query_row("SELECT COUNT(*) FROM derivative", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(d, 4);
     }
 
@@ -421,9 +499,15 @@ mod tests {
 
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let progress = Progress(tx);
-        let r1 = GenericAdapter::new().ingest(&ctx, root.path(), sid, progress.clone()).await.unwrap();
+        let r1 = GenericAdapter::new()
+            .ingest(&ctx, root.path(), sid, progress.clone())
+            .await
+            .unwrap();
         assert_eq!(r1.inserted, 2);
-        let r2 = GenericAdapter::new().ingest(&ctx, root.path(), sid, progress).await.unwrap();
+        let r2 = GenericAdapter::new()
+            .ingest(&ctx, root.path(), sid, progress)
+            .await
+            .unwrap();
         assert_eq!(r2.inserted, 0);
         assert_eq!(r2.deduped, 2);
     }

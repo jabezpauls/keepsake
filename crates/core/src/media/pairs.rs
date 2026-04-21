@@ -11,7 +11,7 @@
 //!   + `IMG_0001.JPG`), both carry EXIF.
 //! * **Bursts** — iPhone names burst members `IMG_Exxxx.JPG` (edited pick)
 //!   + `IMG_xxxx.JPG` (original), or carries a `BurstUUID` in EXIF; we group
-//!   files sharing a BurstUUID *or* the same numeric suffix + E prefix.
+//!     files sharing a BurstUUID *or* the same numeric suffix + E prefix.
 //!
 //! Phase-1 acceptance #5 requires `is_live` on 3 fixture pairs and correct
 //! burst grouping for 2 bursts.
@@ -58,7 +58,10 @@ pub fn detect_pairs(paths: &[PathBuf]) -> PairReport {
     for p in paths {
         let parent = p.parent().map(Path::to_path_buf).unwrap_or_default();
         if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
-            by_stem.entry((parent, stem.to_string())).or_default().push(p.clone());
+            by_stem
+                .entry((parent, stem.to_string()))
+                .or_default()
+                .push(p.clone());
         }
     }
 
@@ -80,7 +83,10 @@ pub fn detect_pairs(paths: &[PathBuf]) -> PairReport {
             // Apple's live photos typically sit in DCIM/###APPLE with basenames
             // like IMG_0001; the heuristic + stem match is enough for Phase 1.
             if stem.starts_with("IMG_") || stem.starts_with("img_") {
-                report.live.push(LivePair { still: h.clone(), video: m.clone() });
+                report.live.push(LivePair {
+                    still: h.clone(),
+                    video: m.clone(),
+                });
             }
         }
     }
@@ -94,13 +100,18 @@ pub fn detect_pairs(paths: &[PathBuf]) -> PairReport {
         let mut jpeg: Option<&PathBuf> = None;
         for s in siblings {
             match ext_lower(s).as_deref() {
-                Some("cr2" | "cr3" | "nef" | "arw" | "dng" | "raf" | "orf" | "rw2") => raw = Some(s),
+                Some("cr2" | "cr3" | "nef" | "arw" | "dng" | "raf" | "orf" | "rw2") => {
+                    raw = Some(s);
+                }
                 Some("jpg" | "jpeg") => jpeg = Some(s),
                 _ => {}
             }
         }
         if let (Some(r), Some(j)) = (raw, jpeg) {
-            report.raw_jpeg.push(RawJpegPair { raw: r.clone(), jpeg: j.clone() });
+            report.raw_jpeg.push(RawJpegPair {
+                raw: r.clone(),
+                jpeg: j.clone(),
+            });
         }
     }
 
@@ -114,18 +125,31 @@ pub fn detect_pairs(paths: &[PathBuf]) -> PairReport {
     // ---- Bursts (iPhone IMG_E prefix heuristic) ----
     let mut burst_groups: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
     for p in paths {
-        if !matches!(ext_lower(p).as_deref(), Some("jpg" | "jpeg" | "heic" | "heif")) {
+        if !matches!(
+            ext_lower(p).as_deref(),
+            Some("jpg" | "jpeg" | "heic" | "heif")
+        ) {
             continue;
         }
-        let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else { continue };
+        let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
         // IMG_1234 or IMG_E1234
-        let number = stem.strip_prefix("IMG_").or_else(|| stem.strip_prefix("img_"));
+        let number = stem
+            .strip_prefix("IMG_")
+            .or_else(|| stem.strip_prefix("img_"));
         let Some(n) = number else { continue };
-        let key_n = n.strip_prefix('E').or_else(|| n.strip_prefix('e')).unwrap_or(n);
+        let key_n = n
+            .strip_prefix('E')
+            .or_else(|| n.strip_prefix('e'))
+            .unwrap_or(n);
         if !key_n.chars().all(|c| c.is_ascii_digit()) || key_n.is_empty() {
             continue;
         }
-        burst_groups.entry(key_n.to_string()).or_default().push(p.clone());
+        burst_groups
+            .entry(key_n.to_string())
+            .or_default()
+            .push(p.clone());
     }
     // Only *actual* bursts — groups of 2+ files where at least one has the
     // `E` prefix, OR 3+ siblings with the same stem number.
@@ -248,7 +272,7 @@ mod tests {
         let mut body = vec![0xffu8; 10 * 1024];
         body.extend_from_slice(b"\0some padding\0MotionPhoto_Data\0mp4body");
         std::fs::write(&p, &body).unwrap();
-        let report = detect_pairs(&[p.clone()]);
+        let report = detect_pairs(std::slice::from_ref(&p));
         assert_eq!(report.motion, vec![p]);
     }
 

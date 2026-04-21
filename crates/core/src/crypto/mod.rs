@@ -35,8 +35,8 @@ pub use format::{MAGIC, MAGIC_LEN, SECRETSTREAM_HEADER_LEN};
 
 /// One-time libsodium initialisation. Safe to call from many threads.
 pub fn init() -> crate::Result<()> {
-    use std::sync::Once;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Once;
 
     static INIT: Once = Once::new();
     static OK: AtomicBool = AtomicBool::new(false);

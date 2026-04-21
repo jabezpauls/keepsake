@@ -63,13 +63,23 @@ pub fn get_user_record(conn: &Connection, user_id: i64) -> Result<UserRecord> {
 }
 
 fn fixed_16(b: &[u8]) -> rusqlite::Result<[u8; 16]> {
-    b.try_into()
-        .map_err(|_| rusqlite::Error::InvalidColumnType(0, "expected 16 bytes".into(), rusqlite::types::Type::Blob))
+    b.try_into().map_err(|_| {
+        rusqlite::Error::InvalidColumnType(
+            0,
+            "expected 16 bytes".into(),
+            rusqlite::types::Type::Blob,
+        )
+    })
 }
 
 fn fixed_32(b: &[u8]) -> rusqlite::Result<[u8; 32]> {
-    b.try_into()
-        .map_err(|_| rusqlite::Error::InvalidColumnType(0, "expected 32 bytes".into(), rusqlite::types::Type::Blob))
+    b.try_into().map_err(|_| {
+        rusqlite::Error::InvalidColumnType(
+            0,
+            "expected 32 bytes".into(),
+            rusqlite::types::Type::Blob,
+        )
+    })
 }
 
 // --------- SOURCE -------------------------------------------------------------
@@ -99,12 +109,24 @@ pub fn insert_source(
             owner_id, name_ct, root_path_ct, device_hint_ct,
             imported_at, bytes_total, file_count, linked_only
           ) VALUES (?1, ?2, ?3, ?4, ?5, 0, 0, ?6)",
-        params![owner_id, name_ct, root_path_ct, device_hint_ct, imported_at, linked_only as i64],
+        params![
+            owner_id,
+            name_ct,
+            root_path_ct,
+            device_hint_ct,
+            imported_at,
+            linked_only as i64
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
-pub fn bump_source_stats(conn: &Connection, source_id: i64, delta_bytes: i64, delta_files: i64) -> Result<()> {
+pub fn bump_source_stats(
+    conn: &Connection,
+    source_id: i64,
+    delta_bytes: i64,
+    delta_files: i64,
+) -> Result<()> {
     conn.execute(
         r"UPDATE source SET bytes_total = bytes_total + ?1, file_count = file_count + ?2 WHERE id = ?3",
         params![delta_bytes, delta_files, source_id],
@@ -292,12 +314,24 @@ pub fn insert_collection(
     conn.execute(
         r"INSERT INTO collection (owner_id, kind, name_ct, has_password, password_salt, created_at)
           VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![owner_id, kind, name_ct, has_password as i64, password_salt.map(|s| s.as_slice()), created_at],
+        params![
+            owner_id,
+            kind,
+            name_ct,
+            has_password as i64,
+            password_salt.map(|s| s.as_slice()),
+            created_at
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
-pub fn add_to_collection(conn: &Connection, collection_id: i64, asset_id: i64, added_at: i64) -> Result<()> {
+pub fn add_to_collection(
+    conn: &Connection,
+    collection_id: i64,
+    asset_id: i64,
+    added_at: i64,
+) -> Result<()> {
     conn.execute(
         r"INSERT OR IGNORE INTO collection_member (collection_id, asset_id, added_at)
           VALUES (?1, ?2, ?3)",
@@ -339,12 +373,207 @@ pub fn get_collection_key(
     Ok(r)
 }
 
-pub fn set_album_password_salt(conn: &Connection, collection_id: i64, salt: &[u8; 16]) -> Result<()> {
+pub fn set_album_password_salt(
+    conn: &Connection,
+    collection_id: i64,
+    salt: &[u8; 16],
+) -> Result<()> {
     conn.execute(
         r"UPDATE collection SET has_password = 1, password_salt = ?1 WHERE id = ?2",
         params![salt.as_slice(), collection_id],
     )?;
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct CollectionRow {
+    pub id: i64,
+    pub owner_id: i64,
+    pub kind: String,
+    pub name_ct: Vec<u8>,
+    pub has_password: bool,
+    pub password_salt: Option<[u8; 16]>,
+    pub created_at: i64,
+}
+
+fn row_to_collection(r: &rusqlite::Row<'_>) -> rusqlite::Result<CollectionRow> {
+    let salt: Option<Vec<u8>> = r.get(5)?;
+    let password_salt = salt
+        .map(|s| {
+            s.as_slice().try_into().map_err(|_| {
+                rusqlite::Error::InvalidColumnType(
+                    5,
+                    "expected 16 bytes".into(),
+                    rusqlite::types::Type::Blob,
+                )
+            })
+        })
+        .transpose()?;
+    Ok(CollectionRow {
+        id: r.get(0)?,
+        owner_id: r.get(1)?,
+        kind: r.get(2)?,
+        name_ct: r.get(3)?,
+        has_password: r.get::<_, i64>(4)? != 0,
+        password_salt,
+        created_at: r.get(6)?,
+    })
+}
+
+pub fn list_collections(
+    conn: &Connection,
+    owner_id: i64,
+    include_hidden: bool,
+) -> Result<Vec<CollectionRow>> {
+    let mut stmt = if include_hidden {
+        conn.prepare(
+            r"SELECT id, owner_id, kind, name_ct, has_password, password_salt, created_at
+              FROM collection WHERE owner_id = ?1 ORDER BY id",
+        )?
+    } else {
+        conn.prepare(
+            r"SELECT id, owner_id, kind, name_ct, has_password, password_salt, created_at
+              FROM collection WHERE owner_id = ?1 AND kind != 'hidden_vault' ORDER BY id",
+        )?
+    };
+    let rows = stmt
+        .query_map(params![owner_id], row_to_collection)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn get_collection(conn: &Connection, id: i64) -> Result<Option<CollectionRow>> {
+    let r = conn
+        .query_row(
+            r"SELECT id, owner_id, kind, name_ct, has_password, password_salt, created_at
+              FROM collection WHERE id = ?1",
+            params![id],
+            row_to_collection,
+        )
+        .optional()?;
+    Ok(r)
+}
+
+pub fn count_collection_members(conn: &Connection, collection_id: i64) -> Result<i64> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM collection_member WHERE collection_id = ?1",
+        params![collection_id],
+        |r| r.get(0),
+    )?;
+    Ok(n)
+}
+
+pub fn list_collection_page(
+    conn: &Connection,
+    collection_id: i64,
+    cursor_day: i64,
+    cursor_id: i64,
+    limit: u32,
+) -> Result<Vec<TimelineEntry>> {
+    let mut stmt = conn.prepare(
+        r"SELECT a.id, a.taken_at_utc_day, a.mime, a.cas_ref, a.is_video, a.is_live, a.wrapped_file_key
+          FROM asset a
+          JOIN collection_member m ON m.asset_id = a.id
+          WHERE m.collection_id = ?1
+            AND ((COALESCE(a.taken_at_utc_day, 0) < ?2)
+              OR (COALESCE(a.taken_at_utc_day, 0) = ?2 AND a.id < ?3))
+          ORDER BY COALESCE(a.taken_at_utc_day, 0) DESC, a.id DESC
+          LIMIT ?4",
+    )?;
+    let rows = stmt
+        .query_map(params![collection_id, cursor_day, cursor_id, limit], |r| {
+            Ok(TimelineEntry {
+                id: r.get(0)?,
+                taken_at_utc_day: r.get(1)?,
+                mime: r.get(2)?,
+                cas_ref: r.get(3)?,
+                is_video: r.get::<_, i64>(4)? != 0,
+                is_live: r.get::<_, i64>(5)? != 0,
+                wrapped_file_key: r.get(6)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone)]
+pub struct AssetRow {
+    pub id: i64,
+    pub blake3_plaintext: [u8; 32],
+    pub mime: String,
+    pub bytes: i64,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub taken_at_utc_day: Option<i64>,
+    pub is_video: bool,
+    pub is_raw: bool,
+    pub is_screenshot: bool,
+    pub is_live: bool,
+    pub is_motion: bool,
+    pub source_id: i64,
+    pub cas_ref: String,
+    pub imported_at: i64,
+    pub filename_ct: Vec<u8>,
+    pub taken_at_utc_ct: Option<Vec<u8>>,
+    pub gps_ct: Option<Vec<u8>>,
+    pub device_ct: Option<Vec<u8>>,
+    pub lens_ct: Option<Vec<u8>>,
+    pub exif_all_ct: Option<Vec<u8>>,
+    pub wrapped_file_key: Vec<u8>,
+}
+
+pub fn get_asset(conn: &Connection, id: i64) -> Result<Option<AssetRow>> {
+    let r = conn
+        .query_row(
+            r"SELECT id, blake3_plaintext, mime, bytes, width, height, duration_ms,
+                     taken_at_utc_day, is_video, is_raw, is_screenshot, is_live, is_motion,
+                     source_id, cas_ref, imported_at,
+                     filename_ct, taken_at_utc_ct, gps_ct, device_ct, lens_ct, exif_all_ct,
+                     wrapped_file_key
+              FROM asset WHERE id = ?1",
+            params![id],
+            |r| {
+                let blake = fixed_32(&r.get::<_, Vec<u8>>(1)?)?;
+                Ok(AssetRow {
+                    id: r.get(0)?,
+                    blake3_plaintext: blake,
+                    mime: r.get(2)?,
+                    bytes: r.get(3)?,
+                    width: r.get(4)?,
+                    height: r.get(5)?,
+                    duration_ms: r.get(6)?,
+                    taken_at_utc_day: r.get(7)?,
+                    is_video: r.get::<_, i64>(8)? != 0,
+                    is_raw: r.get::<_, i64>(9)? != 0,
+                    is_screenshot: r.get::<_, i64>(10)? != 0,
+                    is_live: r.get::<_, i64>(11)? != 0,
+                    is_motion: r.get::<_, i64>(12)? != 0,
+                    source_id: r.get(13)?,
+                    cas_ref: r.get(14)?,
+                    imported_at: r.get(15)?,
+                    filename_ct: r.get(16)?,
+                    taken_at_utc_ct: r.get(17)?,
+                    gps_ct: r.get(18)?,
+                    device_ct: r.get(19)?,
+                    lens_ct: r.get(20)?,
+                    exif_all_ct: r.get(21)?,
+                    wrapped_file_key: r.get(22)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(r)
+}
+
+pub fn list_collection_member_ids(conn: &Connection, collection_id: i64) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT asset_id FROM collection_member WHERE collection_id = ?1 ORDER BY asset_id",
+    )?;
+    let rows = stmt
+        .query_map(params![collection_id], |r| r.get::<_, i64>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
 }
 
 // --------- EDITS + DERIVATIVES ------------------------------------------------
@@ -358,7 +587,12 @@ pub fn set_edit(conn: &Connection, asset_id: i64, ops_ct: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub fn insert_derivative(conn: &Connection, asset_id: i64, kind: &str, cas_ref: &str) -> Result<()> {
+pub fn insert_derivative(
+    conn: &Connection,
+    asset_id: i64,
+    kind: &str,
+    cas_ref: &str,
+) -> Result<()> {
     conn.execute(
         r"INSERT OR REPLACE INTO derivative (asset_id, kind, cas_ref) VALUES (?1, ?2, ?3)",
         params![asset_id, kind, cas_ref],
@@ -540,17 +774,36 @@ mod tests {
         let (_uid, sid) = seed_user_and_source(&conn);
         let hash = [1u8; 32];
         let a = AssetInsert {
-            blake3_plaintext: &hash, mime: "image/jpeg", bytes: 0, width: None, height: None,
-            duration_ms: None, taken_at_utc_day: None, is_video: false, is_raw: false,
-            is_screenshot: false, is_live: false, is_motion: false, source_id: sid,
-            cas_ref: "x", imported_at: 0, filename_ct: b"f", taken_at_utc_ct: None,
-            gps_ct: None, device_ct: None, lens_ct: None, exif_all_ct: None,
+            blake3_plaintext: &hash,
+            mime: "image/jpeg",
+            bytes: 0,
+            width: None,
+            height: None,
+            duration_ms: None,
+            taken_at_utc_day: None,
+            is_video: false,
+            is_raw: false,
+            is_screenshot: false,
+            is_live: false,
+            is_motion: false,
+            source_id: sid,
+            cas_ref: "x",
+            imported_at: 0,
+            filename_ct: b"f",
+            taken_at_utc_ct: None,
+            gps_ct: None,
+            device_ct: None,
+            lens_ct: None,
+            exif_all_ct: None,
             wrapped_file_key: b"w",
         };
         let id = match insert_asset_if_new(&conn, &a).unwrap() {
             InsertResult::Inserted(x) | InsertResult::Existing(x) => x,
         };
         insert_derivative(&conn, id, "thumb256", "deadbeef").unwrap();
-        assert_eq!(get_derivative(&conn, id, "thumb256").unwrap().as_deref(), Some("deadbeef"));
+        assert_eq!(
+            get_derivative(&conn, id, "thumb256").unwrap().as_deref(),
+            Some("deadbeef")
+        );
     }
 }

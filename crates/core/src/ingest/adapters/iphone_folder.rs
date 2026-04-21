@@ -26,7 +26,9 @@ pub struct IPhoneFolderAdapter {
 
 impl IPhoneFolderAdapter {
     pub fn new() -> Self {
-        Self { inner: GenericAdapter::new() }
+        Self {
+            inner: GenericAdapter::new(),
+        }
     }
 }
 
@@ -40,14 +42,26 @@ impl Default for IPhoneFolderAdapter {
 /// `<digits>APPLE` (e.g. `100APPLE`, `101APPLE`).
 pub fn looks_like_dcim_tree(root: &Path) -> bool {
     let dcim = root.join("DCIM");
-    let scan_root = if dcim.is_dir() { dcim } else { root.to_path_buf() };
-    for entry in std::fs::read_dir(&scan_root).into_iter().flatten().flatten() {
+    let scan_root = if dcim.is_dir() {
+        dcim
+    } else {
+        root.to_path_buf()
+    };
+    for entry in std::fs::read_dir(&scan_root)
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
         let Ok(ft) = entry.file_type() else { continue };
         if !ft.is_dir() {
             continue;
         }
         if let Some(n) = entry.file_name().to_str() {
-            if n.ends_with("APPLE") && n.trim_end_matches("APPLE").chars().all(|c| c.is_ascii_digit()) {
+            if n.ends_with("APPLE")
+                && n.trim_end_matches("APPLE")
+                    .chars()
+                    .all(|c| c.is_ascii_digit())
+            {
                 return true;
             }
         }

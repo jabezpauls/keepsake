@@ -14,7 +14,10 @@ use crate::crypto::keystore::UnlockedUser;
 use crate::crypto::CollectionKey;
 use crate::Result;
 
-pub use adapters::{generic::GenericAdapter, google_takeout::GoogleTakeoutAdapter, iphone_folder::IPhoneFolderAdapter};
+pub use adapters::{
+    generic::GenericAdapter, google_takeout::GoogleTakeoutAdapter,
+    iphone_folder::IPhoneFolderAdapter,
+};
 pub use sidecar::{read_xmp_sidecar, write_xmp_sidecar, XmpFields};
 
 /// Trait every adapter implements. `kind()` is returned by
@@ -67,10 +70,22 @@ pub struct Progress(pub mpsc::UnboundedSender<ProgressEvent>);
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
     ScanStarted(PathBuf),
-    FileStarted { path: PathBuf, index: u64, total: u64 },
-    FileInserted { asset_id: i64, bytes: u64 },
-    FileDeduped { asset_id: i64 },
-    FileSkipped { path: PathBuf, reason: String },
+    FileStarted {
+        path: PathBuf,
+        index: u64,
+        total: u64,
+    },
+    FileInserted {
+        asset_id: i64,
+        bytes: u64,
+    },
+    FileDeduped {
+        asset_id: i64,
+    },
+    FileSkipped {
+        path: PathBuf,
+        reason: String,
+    },
     Done(IngestReport),
 }
 

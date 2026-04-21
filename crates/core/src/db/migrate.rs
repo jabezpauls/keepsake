@@ -37,7 +37,9 @@ mod tests {
     fn apply_on_fresh_db_reaches_current_version() {
         let conn = Connection::open_in_memory().unwrap();
         apply(&conn).unwrap();
-        let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        let v: i32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(v, CURRENT_VERSION);
     }
 
@@ -47,7 +49,9 @@ mod tests {
         apply(&conn).unwrap();
         apply(&conn).unwrap();
         apply(&conn).unwrap();
-        let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        let v: i32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(v, CURRENT_VERSION);
     }
 }

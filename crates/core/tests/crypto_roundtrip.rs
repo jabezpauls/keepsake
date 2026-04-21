@@ -170,7 +170,9 @@ fn adversarial_ciphertext_indistinguishable_from_random() {
     // 50 blobs.
     for i in 0u32..50 {
         let fk = FileKey::random().unwrap();
-        let plaintext: Vec<u8> = (0..100 * 1024).map(|j| ((i as usize + j) % 251) as u8).collect();
+        let plaintext: Vec<u8> = (0..100 * 1024)
+            .map(|j| ((i as usize + j) % 251) as u8)
+            .collect();
         let mut out = Vec::with_capacity(plaintext.len() + 512);
         let mut w = seal_blob_writer(&fk, &mut out).unwrap();
         w.write_all(&plaintext).unwrap();
@@ -181,7 +183,12 @@ fn adversarial_ciphertext_indistinguishable_from_random() {
 
     // 50 AEAD rows too.
     for i in 0u64..50 {
-        let ct = seal_row(b"some plaintext metadata that repeats a lot", i, ck.as_bytes()).unwrap();
+        let ct = seal_row(
+            b"some plaintext metadata that repeats a lot",
+            i,
+            ck.as_bytes(),
+        )
+        .unwrap();
         body.extend_from_slice(&ct);
     }
 

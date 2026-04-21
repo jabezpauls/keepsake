@@ -43,7 +43,8 @@ const SECRETBOX_TAG_LEN: usize = ls::crypto_secretbox_MACBYTES as usize;
 /// Plaintext chunk size for the secretstream blob writer — exactly 4 MiB.
 pub const PLAINTEXT_CHUNK_SIZE: usize = 4 * 1024 * 1024;
 
-const SECRETSTREAM_STATE_LEN: usize = std::mem::size_of::<ls::crypto_secretstream_xchacha20poly1305_state>();
+const SECRETSTREAM_STATE_LEN: usize =
+    std::mem::size_of::<ls::crypto_secretstream_xchacha20poly1305_state>();
 const SECRETSTREAM_ABYTES: usize = ls::crypto_secretstream_xchacha20poly1305_ABYTES as usize;
 
 /// X25519 sealed-box public-key length.
@@ -86,7 +87,9 @@ macro_rules! define_key {
 
         impl std::fmt::Debug for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_struct(stringify!($name)).field("bytes", &"[redacted; 32]").finish()
+                f.debug_struct(stringify!($name))
+                    .field("bytes", &"[redacted; 32]")
+                    .finish()
             }
         }
     };
@@ -100,8 +103,14 @@ define_key!(
     CollectionKey,
     "Per-collection symmetric key. Wraps file keys of assets in the collection."
 );
-define_key!(FileKey, "Per-file symmetric key used with the secretstream blob AEAD.");
-define_key!(SearchKey, "HMAC key used to blind-index FTS5 tokens (Phase 3).");
+define_key!(
+    FileKey,
+    "Per-file symmetric key used with the secretstream blob AEAD."
+);
+define_key!(
+    SearchKey,
+    "HMAC key used to blind-index FTS5 tokens (Phase 3)."
+);
 define_key!(
     KeyEncryptionKey,
     "Password-derived KEK. Wraps the master key in `user.wrapped_master_key`."
@@ -115,7 +124,9 @@ pub struct PeerPublicKey(pub [u8; PEER_PK_LEN]);
 
 impl std::fmt::Debug for PeerPublicKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PeerPublicKey").field("pk_hex", &hex::encode(self.0)).finish()
+        f.debug_struct("PeerPublicKey")
+            .field("pk_hex", &hex::encode(self.0))
+            .finish()
     }
 }
 
@@ -137,12 +148,18 @@ impl PeerKeypair {
         if rc != 0 {
             return Err(Error::Crypto);
         }
-        Ok(Self { public: PeerPublicKey(pk), secret: sk })
+        Ok(Self {
+            public: PeerPublicKey(pk),
+            secret: sk,
+        })
     }
 
     /// Reconstruct from raw key material (e.g. after unwrapping).
     pub fn from_bytes(public: [u8; PEER_PK_LEN], secret: [u8; PEER_SK_LEN]) -> Self {
-        Self { public: PeerPublicKey(public), secret }
+        Self {
+            public: PeerPublicKey(public),
+            secret,
+        }
     }
 
     pub fn secret_bytes(&self) -> &[u8; PEER_SK_LEN] {
@@ -165,7 +182,10 @@ impl PeerKeypair {
         }
         // For persistence we keep only the 32-byte seed as the "secret".
         let _ = sk_full; // full SK is redundant with the seed.
-        Ok(Self { public: PeerPublicKey(pk), secret: seed })
+        Ok(Self {
+            public: PeerPublicKey(pk),
+            secret: seed,
+        })
     }
 
     /// Reconstruct an Iroh-shaped keypair from an already-wrapped seed and its
@@ -194,7 +214,10 @@ impl std::fmt::Debug for PeerKeypair {
 /// Derive a 32-byte key-encryption key from a password + salt.
 ///
 /// Uses `sensitive` limits (`OPSLIMIT=4`, `MEMLIMIT=1 GiB`) per §2.2.
-pub fn derive_kek_from_password(pw: &SecretString, salt: &[u8; SALT_LEN]) -> Result<KeyEncryptionKey> {
+pub fn derive_kek_from_password(
+    pw: &SecretString,
+    salt: &[u8; SALT_LEN],
+) -> Result<KeyEncryptionKey> {
     sodium_init()?;
     let mut out = [0u8; 32];
     let pw_bytes = pw.expose_secret().as_bytes();
@@ -512,7 +535,11 @@ impl<R: Read> BlobReader<R> {
         if rc != 0 {
             return Err(Error::KeyOrData);
         }
-        Ok(Self { state, inner, finished: false })
+        Ok(Self {
+            state,
+            inner,
+            finished: false,
+        })
     }
 
     /// Read one encrypted frame + authenticate. Returns `None` at end-of-stream.
@@ -724,17 +751,31 @@ mod tests {
     #[test]
     fn wrong_password_fails_to_unwrap_master_key() {
         let salt = [1u8; SALT_LEN];
-        let kek_right = derive_kek_from_password(&SecretString::from("right-password-long-xxx"), &salt).unwrap();
-        let kek_wrong = derive_kek_from_password(&SecretString::from("wrong-password-long-xxx"), &salt).unwrap();
+        let kek_right =
+            derive_kek_from_password(&SecretString::from("right-password-long-xxx"), &salt)
+                .unwrap();
+        let kek_wrong =
+            derive_kek_from_password(&SecretString::from("wrong-password-long-xxx"), &salt)
+                .unwrap();
         let mk = MasterKey::random().unwrap();
         let wrapped = wrap_master_key(&mk, &kek_right).unwrap();
-        assert!(matches!(unwrap_master_key(&wrapped, &kek_wrong), Err(Error::KeyOrData)));
+        assert!(matches!(
+            unwrap_master_key(&wrapped, &kek_wrong),
+            Err(Error::KeyOrData)
+        ));
     }
 
     #[test]
     fn blob_round_trip_small_sizes() {
         let fk = FileKey::random().unwrap();
-        for size in [0usize, 1, 100, 4096, PLAINTEXT_CHUNK_SIZE, PLAINTEXT_CHUNK_SIZE + 1] {
+        for size in [
+            0usize,
+            1,
+            100,
+            4096,
+            PLAINTEXT_CHUNK_SIZE,
+            PLAINTEXT_CHUNK_SIZE + 1,
+        ] {
             let plaintext: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
             let mut out = Vec::new();
             let mut w = seal_blob_writer(&fk, &mut out).unwrap();
@@ -768,7 +809,9 @@ mod tests {
         w.finish().unwrap();
         // Corrupt the magic bytes.
         out[0] ^= 0xff;
-        let err = open_blob_reader(&fk, std::io::Cursor::new(&out)).err().unwrap();
+        let err = open_blob_reader(&fk, std::io::Cursor::new(&out))
+            .err()
+            .unwrap();
         assert!(matches!(err, Error::BlobFormat));
     }
 
