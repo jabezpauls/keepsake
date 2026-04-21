@@ -24,7 +24,9 @@ jobs:
             libsodium-dev libheif-dev \
             libavformat-dev libavcodec-dev libavutil-dev \
             libswscale-dev libswresample-dev \
+            libavfilter-dev libavdevice-dev \
             libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev \
+            libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
             libssl-dev pkg-config build-essential
 
       - name: Install Rust
@@ -45,7 +47,9 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: cargo test
-        run: cargo test --workspace --all-targets
+        # Argon2 sensitive memlimit (1 GiB) means 4 parallel test workers OOM
+        # the default GitHub runner; cap at 2.
+        run: cargo test --workspace -- --test-threads=2
 
       - name: cargo doc
         run: cargo doc --no-deps --workspace
@@ -86,3 +90,26 @@ jobs:
         run: pnpm --filter app typecheck
       - name: Test
         run: pnpm --filter app test
+
+  e2e:
+    name: Frontend — Playwright smoke
+    runs-on: ubuntu-latest
+    needs: frontend
+    # Non-blocking until browser install costs are stabilised; the suite is
+    # maintained but failures don't gate merges during Phase-1.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+      - name: Install
+        run: pnpm --filter app install --frozen-lockfile=false
+      - name: Install Playwright browsers
+        run: pnpm --filter app exec playwright install --with-deps chromium
+      - name: Run smoke
+        run: pnpm --filter app test:e2e

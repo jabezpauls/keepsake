@@ -5,7 +5,14 @@ import reactRefresh from "eslint-plugin-react-refresh";
 
 export default [
     {
-        ignores: ["dist", "src-tauri/target", "src-tauri/gen", "node_modules"],
+        ignores: [
+            "dist",
+            "src-tauri/target",
+            "src-tauri/gen",
+            "node_modules",
+            "tests/e2e",
+            "playwright.config.ts",
+        ],
     },
     {
         files: ["**/*.{ts,tsx}"],
