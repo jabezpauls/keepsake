@@ -5,6 +5,7 @@
 
 pub mod cas;
 pub mod crypto;
+pub mod db;
 pub mod error;
 
 pub use error::{Error, Result};
