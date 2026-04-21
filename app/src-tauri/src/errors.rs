@@ -58,7 +58,7 @@ impl From<tokio::task::JoinError> for AppError {
 
 pub type AppResult<T> = std::result::Result<T, AppError>;
 
-/// Convenience: convert an AppResult<T> to the `Result<T, String>` shape Tauri expects.
+/// Convenience: convert an `AppResult` to the `Result<T, String>` shape Tauri expects.
 pub fn wire<T>(r: AppResult<T>) -> Result<T, String> {
     r.map_err(|e| e.to_string())
 }

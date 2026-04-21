@@ -194,7 +194,7 @@ pub enum InsertResult {
 ///
 /// Uses `INSERT OR IGNORE` + a follow-up `SELECT` so Phase 1 can treat
 /// duplicate content as a no-op. Callers still record a per-source
-/// [`asset_location`] row for provenance.
+/// `asset_location` row for provenance.
 pub fn insert_asset_if_new(conn: &Connection, a: &AssetInsert<'_>) -> Result<InsertResult> {
     let affected = conn.execute(
         r"INSERT OR IGNORE INTO asset (

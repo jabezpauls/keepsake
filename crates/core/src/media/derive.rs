@@ -49,7 +49,7 @@ pub struct ThumbnailOutput {
 /// Generate both a 256 px and 1024 px WebP thumbnail from an image on disk.
 ///
 /// Returns an empty Vec for any format the `image` crate can't decode.
-/// Video proxies are handled by [`derive_video_keyframe`] instead.
+/// Video proxies are generated separately (ffmpeg-backed, Phase 2).
 pub fn derive_thumbnails(path: &Path) -> Result<Vec<ThumbnailOutput>> {
     let img = match image::ImageReader::open(path).and_then(image::ImageReader::with_guessed_format)
     {
