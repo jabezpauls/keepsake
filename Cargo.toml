@@ -14,7 +14,9 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/jabezpauls/media-view"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# Per architecture.md §7.1 we deny (rather than forbid) unsafe at the workspace
+# level so the crypto and media FFI modules can selectively allow it.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
