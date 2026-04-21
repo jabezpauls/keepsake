@@ -5,9 +5,9 @@
 //! never fail ingest because of an unreadable EXIF block.
 
 pub mod derive;
+pub mod pairs;
 pub mod probe;
 
-// pairs.rs is added in Step 9 of the execution plan.
-
 pub use derive::{derive_thumbnails, ThumbnailOutput, ThumbnailSize};
+pub use pairs::{detect_pairs, LivePair, PairReport, RawJpegPair};
 pub use probe::{probe_path, MediaProbe};
