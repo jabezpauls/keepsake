@@ -14,7 +14,7 @@ use crate::crypto::keystore::UnlockedUser;
 use crate::crypto::CollectionKey;
 use crate::Result;
 
-pub use adapters::generic::GenericAdapter;
+pub use adapters::{generic::GenericAdapter, google_takeout::GoogleTakeoutAdapter, iphone_folder::IPhoneFolderAdapter};
 pub use sidecar::{read_xmp_sidecar, write_xmp_sidecar, XmpFields};
 
 /// Trait every adapter implements. `kind()` is returned by
