@@ -63,6 +63,18 @@ pub enum Error {
     /// UI surfaces this as a prompt to run `scripts/download_models.sh`.
     #[error("models unavailable")]
     ModelsUnavailable,
+
+    /// Model file present but its SHA-256 doesn't match the manifest. Ships a
+    /// specific variant so the UI can direct the user to re-download rather
+    /// than hitting the generic `ModelsUnavailable` path.
+    #[error("model checksum mismatch: {0}")]
+    MlModelChecksum(&'static str),
+
+    /// Model loaded but its ONNX output tensor layout doesn't match what our
+    /// post-processor expects (e.g. SCRFD export with a different head count).
+    /// See `ml::manifest` for pinned expectations.
+    #[error("model shape mismatch: {0}")]
+    MlModelShape(&'static str),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

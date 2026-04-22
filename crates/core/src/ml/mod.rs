@@ -12,6 +12,13 @@ pub mod nearp;
 pub mod phash;
 pub mod runtime;
 
+// Phase 2.1 — feature-gated ONNX-backed pipeline. Unit-testable pieces
+// (manifest verifier) build without the flag because they only need `sha2` at
+// test time; keep them behind `ml-models` to avoid dragging the dep into the
+// default build.
+#[cfg(feature = "ml-models")]
+pub mod manifest;
+
 pub use runtime::{ExecutionProvider, MlConfig, MlJobKind, MlRuntime, MlWorker};
 
 /// Compile-time flag: true when the `ml-models` feature is enabled. Callers
