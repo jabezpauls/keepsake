@@ -393,6 +393,183 @@ pub fn embed_face(
     Ok(arr.to_vec())
 }
 
+// =========== CLUSTERING =======================================================
+
+/// DBSCAN cluster label. `-1` conventionally means noise (below min_samples
+/// in any reachable neighbourhood). Stored as i32 for easy round-trip with
+/// sqlite.
+pub type ClusterId = i32;
+
+/// Cosine similarity between two unit vectors. Because embeddings coming out
+/// of `clip::l2_normalize` / `embed_face` are already L2-normalised this is
+/// just a dot product; we still divide by norms defensively.
+pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(a.len(), b.len());
+    let mut dot = 0.0f32;
+    let mut na = 0.0f32;
+    let mut nb = 0.0f32;
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        na += x * x;
+        nb += y * y;
+    }
+    let denom = (na * nb).sqrt();
+    if denom < 1e-12 {
+        0.0
+    } else {
+        dot / denom
+    }
+}
+
+/// DBSCAN on cosine distance (`1 - cosine_similarity`). Inputs are assumed
+/// already L2-normalised (we don't force-normalise to let callers share with
+/// other callers that need raw vectors).
+///
+/// `eps` is in cosine-distance units — e.g. 0.4 for the face-clustering
+/// default. `min_samples` is the minimum reachable-neighbourhood size for
+/// a point to be considered core (2 by default).
+///
+/// Returns one label per input point. Clusters are numbered from 0 in
+/// discovery order; noise points are `-1`.
+pub fn dbscan_cosine(vectors: &[Vec<f32>], eps: f32, min_samples: usize) -> Vec<ClusterId> {
+    let n = vectors.len();
+    let mut labels: Vec<ClusterId> = vec![-1; n];
+    let mut visited = vec![false; n];
+    let mut cluster_id: ClusterId = 0;
+
+    // Precompute neighbourhoods. Face libraries are O(K) points (tens of
+    // thousands), so O(N²) distance is fine; we avoid redoing it per seed.
+    let distance = |i: usize, j: usize| -> f32 { 1.0 - cosine(&vectors[i], &vectors[j]) };
+
+    let region_query = |i: usize| -> Vec<usize> {
+        (0..n).filter(|&j| j != i && distance(i, j) <= eps).collect()
+    };
+
+    for i in 0..n {
+        if visited[i] {
+            continue;
+        }
+        visited[i] = true;
+        let neighbours = region_query(i);
+        if neighbours.len() + 1 < min_samples {
+            // Noise (for now; may get picked up as a border point later).
+            continue;
+        }
+        // Expand cluster.
+        labels[i] = cluster_id;
+        let mut stack = neighbours;
+        while let Some(j) = stack.pop() {
+            if !visited[j] {
+                visited[j] = true;
+                let nb = region_query(j);
+                if nb.len() + 1 >= min_samples {
+                    stack.extend(nb);
+                }
+            }
+            if labels[j] == -1 {
+                labels[j] = cluster_id;
+            }
+        }
+        cluster_id += 1;
+    }
+    labels
+}
+
+/// Compute the mean vector of each cluster. Returns a map from cluster_id to
+/// (centroid, member count). Ignores `-1` (noise).
+pub fn cluster_centroids(vectors: &[Vec<f32>], labels: &[ClusterId]) -> Vec<(ClusterId, Vec<f32>, usize)> {
+    debug_assert_eq!(vectors.len(), labels.len());
+    use std::collections::BTreeMap;
+    let mut acc: BTreeMap<ClusterId, (Vec<f32>, usize)> = BTreeMap::new();
+    for (v, &lbl) in vectors.iter().zip(labels.iter()) {
+        if lbl < 0 {
+            continue;
+        }
+        let entry = acc.entry(lbl).or_insert_with(|| (vec![0.0; v.len()], 0));
+        for (a, b) in entry.0.iter_mut().zip(v.iter()) {
+            *a += b;
+        }
+        entry.1 += 1;
+    }
+    let mut out: Vec<(ClusterId, Vec<f32>, usize)> = Vec::with_capacity(acc.len());
+    for (id, (mut sum, count)) in acc {
+        let inv = 1.0 / count as f32;
+        for x in &mut sum {
+            *x *= inv;
+        }
+        // Re-normalise centroid so downstream cosine scoring stays cheap.
+        super::clip::l2_normalize(&mut sum);
+        out.push((id, sum, count));
+    }
+    out
+}
+
+/// Stable-label re-assignment: match new cluster centroids back to old ones
+/// using the Hungarian algorithm on cosine distance, subject to a similarity
+/// threshold (0.55 per plans/phase-2-browsing.md §3.iv). Unmatched new
+/// clusters get fresh IDs.
+///
+/// Returns a map from new_cluster_id → assigned_cluster_id (either an old id
+/// or a fresh allocation). Callers use this to rewrite face.person_id with
+/// minimal churn across re-cluster runs.
+pub fn hungarian_reassign(
+    new_centroids: &[(ClusterId, Vec<f32>, usize)],
+    old_centroids: &[(ClusterId, Vec<f32>, usize)],
+    sim_threshold: f32,
+) -> std::collections::HashMap<ClusterId, ClusterId> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut out: HashMap<ClusterId, ClusterId> = HashMap::new();
+    if new_centroids.is_empty() {
+        return out;
+    }
+
+    // Build a dense cost matrix (scaled to integers — pathfinding's
+    // kuhn_munkres works on i64 *benefit* rather than float cost).
+    let n_new = new_centroids.len();
+    let n_old = old_centroids.len();
+    let dim = n_new.max(n_old);
+    // kuhn_munkres expects a benefit matrix with finite values. We don't use
+    // `i64::MIN` for padding because the algorithm subtracts row-mins at
+    // initialisation and that overflows. Instead pad with 0 (cosine of
+    // orthogonal vectors) — the sim_threshold check below strips out any
+    // accidental "low-benefit" assignments the solver might pick anyway.
+    let mut weights: Vec<Vec<i64>> = vec![vec![0; dim]; dim];
+    for (i, (_, nc, _)) in new_centroids.iter().enumerate() {
+        for (j, (_, oc, _)) in old_centroids.iter().enumerate() {
+            let sim = cosine(nc, oc);
+            // Scale by 1e6 for sub-milli-bit resolution. Add 1e6 so the
+            // minimum value is 0 (cosine ∈ [-1, 1] → benefit ∈ [0, 2e6]).
+            weights[i][j] = ((sim + 1.0) * 1_000_000.0) as i64;
+        }
+    }
+    let mat = pathfinding::matrix::Matrix::from_rows(weights).expect("square");
+    let (_score, assignment) = pathfinding::kuhn_munkres::kuhn_munkres(&mat);
+    // `assignment[i] = j` means new_centroids[i] → old_centroids[j] if in range
+    // and above similarity threshold; otherwise unmatched.
+    let mut used_old: HashSet<ClusterId> = HashSet::new();
+    let mut max_old_id: ClusterId = old_centroids.iter().map(|(id, _, _)| *id).max().unwrap_or(-1);
+    for (i, j) in assignment.iter().enumerate() {
+        if i >= n_new {
+            break;
+        }
+        let (new_id, new_c, _) = &new_centroids[i];
+        if *j < n_old {
+            let (old_id, old_c, _) = &old_centroids[*j];
+            let sim = cosine(new_c, old_c);
+            if sim >= sim_threshold {
+                out.insert(*new_id, *old_id);
+                used_old.insert(*old_id);
+                continue;
+            }
+        }
+        // Unmatched new cluster: allocate a fresh id past the old max.
+        max_old_id += 1;
+        out.insert(*new_id, max_old_id);
+    }
+    out
+}
+
 // =========== TESTS ============================================================
 
 #[cfg(test)]
@@ -579,6 +756,108 @@ mod tests {
                 px.0
             );
         }
+    }
+
+    #[test]
+    fn cosine_of_identical_unit_vectors_is_one() {
+        let a = vec![1.0, 0.0, 0.0];
+        assert!((cosine(&a, &a) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn cosine_of_opposite_vectors_is_minus_one() {
+        let a = vec![1.0, 0.0];
+        let b = vec![-1.0, 0.0];
+        assert!((cosine(&a, &b) + 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn cosine_zero_vector_safe() {
+        let a = vec![0.0_f32; 5];
+        let b = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        assert!(cosine(&a, &b).abs() < 1e-12);
+    }
+
+    fn unit(v: &[f32]) -> Vec<f32> {
+        let mut v = v.to_vec();
+        super::super::clip::l2_normalize(&mut v);
+        v
+    }
+
+    #[test]
+    fn dbscan_finds_two_clusters_in_distinct_directions() {
+        // Two well-separated directions in 4D space, 3 points each.
+        let a1 = unit(&[1.0, 0.05, 0.0, 0.0]);
+        let a2 = unit(&[0.98, 0.0, 0.05, 0.0]);
+        let a3 = unit(&[0.99, 0.02, -0.02, 0.0]);
+        let b1 = unit(&[0.0, 0.0, 1.0, 0.05]);
+        let b2 = unit(&[0.0, 0.05, 0.98, 0.0]);
+        let b3 = unit(&[-0.02, 0.0, 0.99, 0.02]);
+        let vs = vec![a1, a2, a3, b1, b2, b3];
+        let labels = dbscan_cosine(&vs, 0.4, 2);
+        // Clusters 0, 1 respectively; no noise.
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[0], labels[2]);
+        assert_eq!(labels[3], labels[4]);
+        assert_eq!(labels[3], labels[5]);
+        assert_ne!(labels[0], labels[3]);
+        assert!(labels.iter().all(|&l| l >= 0));
+    }
+
+    #[test]
+    fn dbscan_isolated_point_becomes_noise() {
+        let a = unit(&[1.0, 0.0, 0.0]);
+        let b = unit(&[0.99, 0.05, 0.0]);
+        let c = unit(&[0.0, 0.0, 1.0]); // far from a/b, alone
+        let labels = dbscan_cosine(&[a, b, c], 0.2, 2);
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[2], -1);
+    }
+
+    #[test]
+    fn hungarian_reassign_is_stable_when_centroids_match() {
+        // Two old clusters, two new clusters that are effectively the same.
+        let old = vec![
+            (10, unit(&[1.0, 0.0, 0.0]), 5),
+            (11, unit(&[0.0, 1.0, 0.0]), 4),
+        ];
+        let new = vec![
+            (0, unit(&[0.99, 0.05, 0.0]), 5),
+            (1, unit(&[0.05, 0.99, 0.0]), 4),
+        ];
+        let map = hungarian_reassign(&new, &old, 0.55);
+        assert_eq!(map.get(&0), Some(&10));
+        assert_eq!(map.get(&1), Some(&11));
+    }
+
+    #[test]
+    fn hungarian_reassign_allocates_fresh_id_for_new_cluster() {
+        // One old, two new — second new has no match; gets id past old-max.
+        let old = vec![(10, unit(&[1.0, 0.0, 0.0]), 5)];
+        let new = vec![
+            (0, unit(&[0.99, 0.05, 0.0]), 5),
+            (1, unit(&[0.0, 1.0, 0.0]), 3),
+        ];
+        let map = hungarian_reassign(&new, &old, 0.55);
+        assert_eq!(map.get(&0), Some(&10));
+        let assigned = *map.get(&1).expect("second cluster gets an id");
+        assert!(assigned > 10, "fresh id should be past old-max, got {assigned}");
+    }
+
+    #[test]
+    fn cluster_centroids_ignores_noise_and_renormalises() {
+        let v0 = unit(&[1.0, 0.0, 0.0]);
+        let v1 = unit(&[0.99, 0.05, 0.0]);
+        let v2 = unit(&[0.0, 0.0, 1.0]);
+        let labels = vec![0, 0, -1];
+        let cents = cluster_centroids(&[v0, v1, v2], &labels);
+        assert_eq!(cents.len(), 1);
+        let (id, c, n) = &cents[0];
+        assert_eq!(*id, 0);
+        assert_eq!(*n, 2);
+        // Unit-norm.
+        let norm: f32 = c.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((norm - 1.0).abs() < 1e-5);
     }
 
     #[test]
