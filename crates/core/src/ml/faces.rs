@@ -357,6 +357,106 @@ pub fn arcface_preprocess(aligned: &image::RgbImage) -> Array4<f32> {
     t
 }
 
+/// Build the SCRFD input tensor from an `RgbImage` using letterbox
+/// preprocessing: isotropic scale to fit in `SCRFD_INPUT × SCRFD_INPUT`, then
+/// pad with black to center the content. Returns the tensor plus the
+/// `(scale, pad_x, pad_y)` needed to invert the transform on output boxes.
+///
+/// Channel order: BGR (InsightFace convention). Per-channel normalise
+/// `(x - 127.5) / 128`.
+pub fn scrfd_preprocess(img: &image::RgbImage) -> (Array4<f32>, f32, f32, f32) {
+    let (scale, pad_x, pad_y) = letterbox_params(img.width(), img.height(), SCRFD_INPUT);
+    let new_w = (img.width() as f32 * scale).round() as u32;
+    let new_h = (img.height() as f32 * scale).round() as u32;
+    let resized = image::imageops::resize(img, new_w, new_h, image::imageops::FilterType::Triangle);
+
+    let side = SCRFD_INPUT as usize;
+    let mut t = Array4::<f32>::zeros((1, 3, side, side));
+    // Fill the padded area with the normalised equivalent of 0 (black): each
+    // channel becomes (0 - 127.5) / 128 = -0.9961...
+    let pad_norm = (0.0 - 127.5) / 128.0;
+    t.fill(pad_norm);
+
+    let ox = pad_x.round() as i32;
+    let oy = pad_y.round() as i32;
+    for (y, row) in resized.rows().enumerate() {
+        for (x, px) in row.enumerate() {
+            let dst_x = ox + x as i32;
+            let dst_y = oy + y as i32;
+            if dst_x < 0 || dst_y < 0 || dst_x >= side as i32 || dst_y >= side as i32 {
+                continue;
+            }
+            t[[0, 0, dst_y as usize, dst_x as usize]] = (f32::from(px[2]) - 127.5) / 128.0;
+            t[[0, 1, dst_y as usize, dst_x as usize]] = (f32::from(px[1]) - 127.5) / 128.0;
+            t[[0, 2, dst_y as usize, dst_x as usize]] = (f32::from(px[0]) - 127.5) / 128.0;
+        }
+    }
+    (t, scale, pad_x, pad_y)
+}
+
+/// SCRFD end-to-end on an `RgbImage` — preprocess, run, decode every stride
+/// head, NMS, inverse-letterbox. Returns surviving detections in the input
+/// image's pixel space.
+///
+/// `session` must be the 10G BNKPS export (9 output tensors). The loader
+/// asserts this at load time; if you're here with anything else we've
+/// already failed with `Error::MlModelShape`.
+pub fn detect_faces(session: &SharedSession, img: &image::RgbImage) -> Result<Vec<FaceDetection>> {
+    let (tensor, scale, pad_x, pad_y) = scrfd_preprocess(img);
+    let view = tensor.view();
+    let input = TensorRef::from_array_view(view)
+        .map_err(|e| Error::Media(format!("scrfd input: {e}")))?;
+    let mut sess = session
+        .lock()
+        .map_err(|_| Error::Ingest("scrfd session mutex poisoned".into()))?;
+    let outputs = sess
+        .run(ort::inputs![input])
+        .map_err(|e| Error::Media(format!("scrfd run: {e}")))?;
+
+    // SCRFD 10G BNKPS emits heads in canonical order:
+    // [score_8, score_16, score_32, bbox_8, bbox_16, bbox_32, kps_8, kps_16, kps_32].
+    // We extract each as a flat f32 slice.
+    let mut heads: Vec<(Vec<i64>, Vec<f32>)> = Vec::with_capacity(9);
+    for (_, value) in &outputs {
+        let (shape, data) = value
+            .try_extract_tensor::<f32>()
+            .map_err(|e| Error::Media(format!("scrfd extract: {e}")))?;
+        heads.push((shape.as_ref().to_vec(), data.to_vec()));
+    }
+    // Drop SessionOutputs before releasing the session lock.
+    drop(outputs);
+    drop(sess);
+    if heads.len() != 9 {
+        return Err(Error::MlModelShape(
+            "scrfd.onnx: expected 9 output heads at run time",
+        ));
+    }
+
+    let mut candidates: Vec<RawDetection> = Vec::new();
+    for (i, &stride) in SCRFD_STRIDES.iter().enumerate() {
+        let feat = SCRFD_INPUT / stride;
+        let scores = &heads[i].1;
+        let bboxes = &heads[i + 3].1;
+        let kps = &heads[i + 6].1;
+        candidates.extend(decode_stride(
+            scores,
+            bboxes,
+            kps,
+            feat,
+            feat,
+            stride,
+            SCRFD_NUM_ANCHORS,
+            DEFAULT_SCORE_THR,
+        ));
+    }
+    let kept = nms(candidates, DEFAULT_NMS_IOU);
+
+    Ok(kept
+        .into_iter()
+        .map(|d| unletterbox(&d, scale, pad_x, pad_y))
+        .collect())
+}
+
 /// Full align + embed. Returns a 512-d unit vector.
 pub fn embed_face(
     session: &SharedSession,

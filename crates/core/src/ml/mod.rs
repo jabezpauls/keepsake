@@ -31,6 +31,9 @@ pub mod tokenizer;
 #[cfg(feature = "ml-models")]
 pub mod faces;
 
+#[cfg(feature = "ml-models")]
+pub mod worker_exec;
+
 pub use runtime::{ExecutionProvider, MlConfig, MlJobKind, MlRuntime, MlWorker};
 
 /// Compile-time flag: true when the `ml-models` feature is enabled. Callers

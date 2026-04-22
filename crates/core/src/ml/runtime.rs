@@ -15,6 +15,16 @@ use std::sync::Arc;
 use crate::cas::CasStore;
 use crate::{Error, Result};
 
+#[cfg(feature = "ml-models")]
+use crate::crypto::CollectionKey;
+
+/// Resolver handed to the ML worker so it can fetch the right per-asset
+/// collection key at inference time. The app wires this at unlock, returning
+/// `None` when the caller's key material isn't unlocked (jobs then fail with
+/// `Error::Locked` rather than silently succeeding).
+#[cfg(feature = "ml-models")]
+pub type KeyResolver = Arc<dyn Fn(i64) -> Option<CollectionKey> + Send + Sync>;
+
 /// Configuration for loading the ML runtime.
 #[derive(Debug, Clone)]
 pub struct MlConfig {
@@ -138,6 +148,8 @@ struct MlWorkerInner {
     db: Arc<tokio::sync::Mutex<rusqlite::Connection>>,
     cas: Arc<CasStore>,
     runtime: std::sync::Mutex<Option<Arc<MlRuntime>>>,
+    #[cfg(feature = "ml-models")]
+    key_resolver: std::sync::Mutex<Option<KeyResolver>>,
 }
 
 impl MlWorker {
@@ -147,8 +159,18 @@ impl MlWorker {
                 db,
                 cas,
                 runtime: std::sync::Mutex::new(None),
+                #[cfg(feature = "ml-models")]
+                key_resolver: std::sync::Mutex::new(None),
             }),
         }
+    }
+
+    /// Install / replace the per-asset key resolver. Called by the app at
+    /// unlock time. Absent a resolver, any job requiring key material fails
+    /// with `Error::Locked`.
+    #[cfg(feature = "ml-models")]
+    pub fn set_key_resolver(&self, resolver: KeyResolver) {
+        *self.inner.key_resolver.lock().unwrap() = Some(resolver);
     }
 
     /// Attempt to load the runtime. Idempotent; silent on `ModelsUnavailable`.
@@ -163,11 +185,23 @@ impl MlWorker {
     pub async fn drain_one(&self) -> Result<Option<(MlJobKind, Result<()>)>> {
         let db = self.inner.db.clone();
         let cas = self.inner.cas.clone();
-        let has_rt = self.inner.runtime.lock().unwrap().is_some();
+        let runtime = self.inner.runtime.lock().unwrap().clone();
+        #[cfg(feature = "ml-models")]
+        let resolver = self.inner.key_resolver.lock().unwrap().clone();
 
-        tokio::task::spawn_blocking(move || drain_blocking(&db, &cas, has_rt))
-            .await
-            .map_err(|_| Error::Ingest("worker join".into()))?
+        tokio::task::spawn_blocking(move || {
+            #[cfg(feature = "ml-models")]
+            {
+                drain_blocking(&db, &cas, runtime.as_deref(), resolver.as_ref())
+            }
+            #[cfg(not(feature = "ml-models"))]
+            {
+                let _ = (&cas, &runtime);
+                drain_blocking(&db)
+            }
+        })
+        .await
+        .map_err(|_| Error::Ingest("worker join".into()))?
     }
 
     /// Snapshot counts by state for the UI.
@@ -182,10 +216,12 @@ impl MlWorker {
     }
 }
 
+#[cfg(feature = "ml-models")]
 fn drain_blocking(
     db: &tokio::sync::Mutex<rusqlite::Connection>,
-    _cas: &CasStore,
-    has_rt: bool,
+    cas: &CasStore,
+    runtime: Option<&MlRuntime>,
+    resolver: Option<&KeyResolver>,
 ) -> Result<Option<(MlJobKind, Result<()>)>> {
     let conn = db.blocking_lock();
     let now = chrono::Utc::now().timestamp();
@@ -200,14 +236,65 @@ fn drain_blocking(
         )));
     };
 
-    let outcome = if kind.needs_models() && !has_rt {
+    let outcome: Result<()> = if kind.needs_models() {
+        match (runtime, resolver) {
+            (None, _) => Err(Error::ModelsUnavailable),
+            (_, None) => Err(Error::Locked),
+            (Some(rt), Some(resolver)) => {
+                let ck = |asset_id: i64| resolver(asset_id);
+                match kind {
+                    MlJobKind::EmbedAsset => match job.asset_id {
+                        Some(asset_id) => {
+                            super::worker_exec::run_embed_asset(&conn, cas, rt, asset_id, &ck)
+                        }
+                        None => Err(Error::Ingest("embed_asset: missing asset_id".into())),
+                    },
+                    MlJobKind::DetectFaces => match job.asset_id {
+                        Some(asset_id) => {
+                            super::worker_exec::run_detect_faces(&conn, cas, rt, asset_id, &ck)
+                        }
+                        None => Err(Error::Ingest("detect_faces: missing asset_id".into())),
+                    },
+                    MlJobKind::RebuildPersonClusters => {
+                        super::worker_exec::run_rebuild_person_clusters(&conn, &ck)
+                    }
+                    _ => unreachable!("needs_models covered above"),
+                }
+            }
+        }
+    } else {
+        // Pure-Rust kinds (Phash, RebuildNearDup) — Phase 2 runs pHash inline
+        // during ingest, and near-dup rebuild is an explicit command, so
+        // these jobs are purely a "mark processed" signal.
+        Ok(())
+    };
+
+    match &outcome {
+        Ok(()) => crate::db::finish_ml_job(&conn, job.id, now)?,
+        Err(e) => crate::db::fail_ml_job(&conn, job.id, &e.to_string(), now)?,
+    }
+    Ok(Some((kind, outcome)))
+}
+
+#[cfg(not(feature = "ml-models"))]
+fn drain_blocking(
+    db: &tokio::sync::Mutex<rusqlite::Connection>,
+) -> Result<Option<(MlJobKind, Result<()>)>> {
+    let conn = db.blocking_lock();
+    let now = chrono::Utc::now().timestamp();
+    let Some(job) = crate::db::claim_next_ml_job(&conn, now)? else {
+        return Ok(None);
+    };
+    let Some(kind) = MlJobKind::from_str(&job.kind) else {
+        crate::db::fail_ml_job(&conn, job.id, "unknown kind", now)?;
+        return Ok(Some((
+            MlJobKind::Phash,
+            Err(Error::Ingest("unknown kind".into())),
+        )));
+    };
+    let outcome: Result<()> = if kind.needs_models() {
         Err(Error::ModelsUnavailable)
     } else {
-        // The pure-Rust kinds (Phash, RebuildNearDup) would run here; for
-        // Phase 2 the pHash pass is done inline during ingest, so Phash
-        // jobs are purely a "mark this asset processed" signal and we
-        // succeed unconditionally. RebuildNearDup is handled by an
-        // explicit command path rather than the queue today.
         Ok(())
     };
     match &outcome {
