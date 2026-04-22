@@ -10,6 +10,6 @@
 
 pub mod nearp;
 pub mod phash;
+pub mod runtime;
 
-// Model-backed modules (`clip`, `faces`, `runtime`) are added in Step 4 behind
-// the `ml-models` feature flag.
+pub use runtime::{ExecutionProvider, MlConfig, MlJobKind, MlRuntime, MlWorker};

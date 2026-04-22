@@ -40,6 +40,7 @@ impl From<CoreError> for AppError {
             CoreError::NotFound => Self::NotFound,
             CoreError::Locked => Self::Locked,
             CoreError::RateLimited => Self::BadRequest("rate limited".into()),
+            CoreError::ModelsUnavailable => Self::BadRequest("models unavailable".into()),
         }
     }
 }

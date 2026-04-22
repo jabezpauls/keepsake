@@ -57,6 +57,12 @@ pub enum Error {
     /// never reveal the counter's granularity.
     #[error("rate limited")]
     RateLimited,
+
+    /// The on-device ML runtime isn't available — either the build lacks the
+    /// `ml-models` feature flag or the model files aren't present on disk.
+    /// UI surfaces this as a prompt to run `scripts/download_models.sh`.
+    #[error("models unavailable")]
+    ModelsUnavailable,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
