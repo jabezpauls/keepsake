@@ -83,7 +83,7 @@ fn score_asset(
     Some(phash::sharpness(&img))
 }
 
-/// Build the cluster-id → Vec<member> index the UI wants.
+/// Build the cluster-id → `Vec<member>` index the UI wants.
 pub fn clusters_by_id(conn: &rusqlite::Connection) -> Result<HashMap<i64, Vec<NdClusterMember>>> {
     let mut out: HashMap<i64, Vec<NdClusterMember>> = HashMap::new();
     for m in db::list_nd_clusters(conn)? {

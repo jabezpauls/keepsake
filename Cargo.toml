@@ -67,6 +67,11 @@ ptr_as_ptr = "allow"
 ref_option = "allow"
 collapsible_if = "allow"
 collapsible_else_if = "allow"
+unreadable_literal = "allow"
+type_complexity = "allow"
+default_trait_access = "allow"
+should_implement_trait = "allow"
+stable_sort_primitive = "allow"
 
 [workspace.dependencies]
 # Error / logging / async

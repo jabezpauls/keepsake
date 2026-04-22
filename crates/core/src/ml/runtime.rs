@@ -5,7 +5,7 @@
 //! [`MlRuntime::load`] returns `Err(Error::ModelsUnavailable)` and every job
 //! kind resolves to a no-op result the worker can still drain from the queue.
 //!
-//! [`MlJob`], [`MlJobKind`], and the [`MlWorker`] plumbing are always
+//! [`MlJobKind`] and the [`MlWorker`] plumbing are always
 //! available so the UI can render "ML work queued: N" status regardless of
 //! build configuration.
 

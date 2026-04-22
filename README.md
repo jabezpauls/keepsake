@@ -62,4 +62,34 @@ pnpm --filter app test:e2e                   # optional; installs browsers
 
 ## Status
 
-Phase 1 foundation — shipped. See [`plans/phase-1-foundation.md`](./plans/phase-1-foundation.md) §9 for the acceptance matrix.
+- **Phase 1 foundation — shipped.** Crypto envelope, CAS, SQLite schema
+  (user_version=1), generic/iPhone/Google-Takeout ingest adapters,
+  Tauri IPC surface, React UI. See
+  [`plans/phase-1-foundation.md`](./plans/phase-1-foundation.md) §9.
+- **Phase 2 browsing — shipped.** Schema upgraded to `user_version=2`
+  (`ml_job`, `nd_cluster`, `asset_vec`, `asset_location.path_hash`);
+  64-bit dhash + near-duplicate clustering + best-shot picker;
+  metadata-filter search (CLIP text rerank gated on `ml-models`);
+  Tauri commands for people/search/map/near-dup/ML status; React
+  surfaces for Timeline zoom (Year/Month/Day) + sticky headers +
+  keyboard nav (j/k, arrows, `/`), Search, Map, People, Duplicates;
+  `ml-models` feature flag scaffolded (default off). See
+  [`plans/phase-2-browsing.md`](./plans/phase-2-browsing.md) for the
+  acceptance matrix and `SECURITY.md` for the updated leakage table.
+
+### Enabling ML
+
+Face detection and natural-language search require on-device ONNX
+models. To enable:
+
+```bash
+# Populate scripts/download_models.sh with your production model
+# URLs + SHA-256 checksums, then:
+./scripts/download_models.sh
+cargo build --features ml-models
+```
+
+Without models, Media Vault still runs with everything that doesn't
+require inference — metadata search, pHash-based near-dup clustering,
+the full Phase-1 pipeline. The People tab will render empty and the
+"text" search field falls back to date-ordered results.

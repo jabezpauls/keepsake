@@ -49,7 +49,7 @@ async fn search_assets_impl(state: &AppState, req: SearchRequest) -> AppResult<V
             is_live: req.is_live,
             camera_make: req.camera_make,
             lens: req.lens,
-            limit: req.limit.max(1).min(500),
+            limit: req.limit.clamp(1, 500),
         };
         let hits = search::search(&guard, &q, Some(&ck))?;
         let ids: Vec<i64> = hits.iter().map(|h| h.asset_id).collect();
