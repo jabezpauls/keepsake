@@ -13,3 +13,11 @@ pub mod phash;
 pub mod runtime;
 
 pub use runtime::{ExecutionProvider, MlConfig, MlJobKind, MlRuntime, MlWorker};
+
+/// Compile-time flag: true when the `ml-models` feature is enabled. Callers
+/// use this for UI/status rendering (e.g. "install models" vs "running").
+#[cfg(feature = "ml-models")]
+pub const MODELS_ENABLED: bool = true;
+
+#[cfg(not(feature = "ml-models"))]
+pub const MODELS_ENABLED: bool = false;

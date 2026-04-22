@@ -180,3 +180,94 @@ pub struct ExportReport {
     #[ts(type = "number")]
     pub skipped: u64,
 }
+
+// =========== Phase 2 DTOs =====================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct PersonView {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub name: Option<String>,
+    pub hidden: bool,
+    #[ts(type = "number")]
+    pub face_count: i64,
+    #[ts(type = "number | null")]
+    pub cover_asset_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct MapPoint {
+    #[ts(type = "number")]
+    pub asset_id: i64,
+    pub lat: f64,
+    pub lon: f64,
+    #[ts(type = "number | null")]
+    pub taken_at_utc_day: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct SearchRequest {
+    pub text: Option<String>,
+    pub person_ids: Vec<i64>,
+    #[ts(type = "number | null")]
+    pub after_day: Option<i64>,
+    #[ts(type = "number | null")]
+    pub before_day: Option<i64>,
+    #[ts(type = "number | null")]
+    pub source_id: Option<i64>,
+    pub has_faces: Option<bool>,
+    pub is_video: Option<bool>,
+    pub is_raw: Option<bool>,
+    pub is_screenshot: Option<bool>,
+    pub is_live: Option<bool>,
+    pub camera_make: Option<String>,
+    pub lens: Option<String>,
+    #[ts(type = "number")]
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct SearchHitView {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub score: Option<f32>,
+    #[ts(type = "number | null")]
+    pub taken_at_utc_day: Option<i64>,
+    pub mime: String,
+    pub is_video: bool,
+    pub is_live: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct NearDupCluster {
+    #[ts(type = "number")]
+    pub cluster_id: i64,
+    pub members: Vec<NearDupMember>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct NearDupMember {
+    #[ts(type = "number")]
+    pub asset_id: i64,
+    pub is_best: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct MlStatus {
+    pub models_available: bool,
+    #[ts(type = "number")]
+    pub pending: i64,
+    #[ts(type = "number")]
+    pub running: i64,
+    #[ts(type = "number")]
+    pub done: i64,
+    #[ts(type = "number")]
+    pub failed: i64,
+}

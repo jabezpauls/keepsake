@@ -48,6 +48,16 @@ pub fn run() {
             commands::albums::album_page,
             commands::albums::add_to_album,
             commands::export::export_album,
+            commands::people::list_people,
+            commands::people::rename_person,
+            commands::people::hide_person,
+            commands::people::merge_people,
+            commands::people::split_person,
+            commands::search::search_assets,
+            commands::map::map_points,
+            commands::nearp::near_dup_rebuild,
+            commands::nearp::near_dup_list,
+            commands::ml::ml_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

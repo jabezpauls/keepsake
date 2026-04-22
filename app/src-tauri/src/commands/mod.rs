@@ -8,5 +8,10 @@
 pub mod albums;
 pub mod auth;
 pub mod export;
+pub mod map;
+pub mod ml;
+pub mod nearp;
+pub mod people;
+pub mod search;
 pub mod sources;
 pub mod timeline;
