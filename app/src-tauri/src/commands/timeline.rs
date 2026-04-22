@@ -46,6 +46,7 @@ async fn timeline_page_impl(
                 mime: r.mime.clone(),
                 is_video: r.is_video,
                 is_live: r.is_live,
+                is_raw: r.is_raw,
             })
             .collect();
         let next_cursor = rows.last().map(|r| TimelineCursor {

@@ -9,6 +9,13 @@ export type { ExportReport } from "./bindings/ExportReport";
 export type { GpsView } from "./bindings/GpsView";
 export type { IngestState } from "./bindings/IngestState";
 export type { IngestStatus } from "./bindings/IngestStatus";
+export type { MapPoint } from "./bindings/MapPoint";
+export type { MlStatus } from "./bindings/MlStatus";
+export type { NearDupCluster } from "./bindings/NearDupCluster";
+export type { NearDupMember } from "./bindings/NearDupMember";
+export type { PersonView } from "./bindings/PersonView";
+export type { SearchHitView } from "./bindings/SearchHitView";
+export type { SearchRequest } from "./bindings/SearchRequest";
 export type { SessionHandle } from "./bindings/SessionHandle";
 export type { SourceView } from "./bindings/SourceView";
 export type { TimelineCursor } from "./bindings/TimelineCursor";
@@ -20,6 +27,12 @@ import type { AssetDetailView } from "./bindings/AssetDetailView";
 import type { ExportOptions } from "./bindings/ExportOptions";
 import type { ExportReport } from "./bindings/ExportReport";
 import type { IngestStatus } from "./bindings/IngestStatus";
+import type { MapPoint } from "./bindings/MapPoint";
+import type { MlStatus } from "./bindings/MlStatus";
+import type { NearDupCluster } from "./bindings/NearDupCluster";
+import type { PersonView } from "./bindings/PersonView";
+import type { SearchHitView } from "./bindings/SearchHitView";
+import type { SearchRequest } from "./bindings/SearchRequest";
 import type { SessionHandle } from "./bindings/SessionHandle";
 import type { SourceView } from "./bindings/SourceView";
 import type { TimelineCursor } from "./bindings/TimelineCursor";
@@ -82,6 +95,43 @@ export const api = {
     // --- export ---------------------------------------------------------
     exportAlbum: (id: number, dest: string, options: ExportOptions) =>
         invoke<ExportReport>("export_album", { id, dest, options }),
+
+    // --- people ---------------------------------------------------------
+    listPeople: (includeHidden?: boolean) =>
+        invoke<PersonView[]>("list_people", {
+            includeHidden: includeHidden ?? false,
+        }),
+    renamePerson: (personId: number, name: string) =>
+        invoke<null>("rename_person", { personId, name }),
+    hidePerson: (personId: number, hidden: boolean) =>
+        invoke<null>("hide_person", { personId, hidden }),
+    mergePeople: (src: number, dst: number) =>
+        invoke<null>("merge_people", { src, dst }),
+    splitPerson: (sourcePerson: number, faceIds: number[]) =>
+        invoke<number>("split_person", { sourcePerson, faceIds }),
+
+    // --- search ---------------------------------------------------------
+    searchAssets: (request: SearchRequest) =>
+        invoke<SearchHitView[]>("search_assets", { request }),
+
+    // --- map ------------------------------------------------------------
+    mapPoints: (
+        afterDay: number | null,
+        beforeDay: number | null,
+        sourceId: number | null,
+    ) =>
+        invoke<MapPoint[]>("map_points", {
+            afterDay,
+            beforeDay,
+            sourceId,
+        }),
+
+    // --- near-dup -------------------------------------------------------
+    nearDupRebuild: () => invoke<number>("near_dup_rebuild"),
+    nearDupList: () => invoke<NearDupCluster[]>("near_dup_list"),
+
+    // --- ml -------------------------------------------------------------
+    mlStatus: () => invoke<MlStatus>("ml_status"),
 };
 
 /// Decode a byte-array returned by `assetThumbnail` / `assetOriginal` into a

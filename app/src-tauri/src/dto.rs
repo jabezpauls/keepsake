@@ -102,6 +102,7 @@ pub struct TimelineEntryView {
     pub mime: String,
     pub is_video: bool,
     pub is_live: bool,
+    pub is_raw: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

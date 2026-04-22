@@ -299,6 +299,7 @@ pub struct TimelineEntry {
     pub cas_ref: String,
     pub is_video: bool,
     pub is_live: bool,
+    pub is_raw: bool,
     pub wrapped_file_key: Vec<u8>,
 }
 
@@ -311,7 +312,7 @@ pub fn list_timeline_page(
     limit: u32,
 ) -> Result<Vec<TimelineEntry>> {
     let mut stmt = conn.prepare(
-        r"SELECT id, taken_at_utc_day, mime, cas_ref, is_video, is_live, wrapped_file_key
+        r"SELECT id, taken_at_utc_day, mime, cas_ref, is_video, is_live, is_raw, wrapped_file_key
           FROM asset
           WHERE (COALESCE(taken_at_utc_day, 0) < ?1)
              OR (COALESCE(taken_at_utc_day, 0) = ?1 AND id < ?2)
@@ -327,7 +328,8 @@ pub fn list_timeline_page(
                 cas_ref: r.get(3)?,
                 is_video: r.get::<_, i64>(4)? != 0,
                 is_live: r.get::<_, i64>(5)? != 0,
-                wrapped_file_key: r.get(6)?,
+                is_raw: r.get::<_, i64>(6)? != 0,
+                wrapped_file_key: r.get(7)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -505,7 +507,8 @@ pub fn list_collection_page(
     limit: u32,
 ) -> Result<Vec<TimelineEntry>> {
     let mut stmt = conn.prepare(
-        r"SELECT a.id, a.taken_at_utc_day, a.mime, a.cas_ref, a.is_video, a.is_live, a.wrapped_file_key
+        r"SELECT a.id, a.taken_at_utc_day, a.mime, a.cas_ref,
+                 a.is_video, a.is_live, a.is_raw, a.wrapped_file_key
           FROM asset a
           JOIN collection_member m ON m.asset_id = a.id
           WHERE m.collection_id = ?1
@@ -523,7 +526,8 @@ pub fn list_collection_page(
                 cas_ref: r.get(3)?,
                 is_video: r.get::<_, i64>(4)? != 0,
                 is_live: r.get::<_, i64>(5)? != 0,
-                wrapped_file_key: r.get(6)?,
+                is_raw: r.get::<_, i64>(6)? != 0,
+                wrapped_file_key: r.get(7)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1137,7 +1141,8 @@ pub fn list_timeline_by_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<Timeli
     }
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
-        r"SELECT id, taken_at_utc_day, mime, cas_ref, is_video, is_live, wrapped_file_key
+        r"SELECT id, taken_at_utc_day, mime, cas_ref,
+                 is_video, is_live, is_raw, wrapped_file_key
           FROM asset WHERE id IN ({placeholders})"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -1153,7 +1158,8 @@ pub fn list_timeline_by_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<Timeli
                     cas_ref: r.get(3)?,
                     is_video: r.get::<_, i64>(4)? != 0,
                     is_live: r.get::<_, i64>(5)? != 0,
-                    wrapped_file_key: r.get(6)?,
+                    is_raw: r.get::<_, i64>(6)? != 0,
+                    wrapped_file_key: r.get(7)?,
                 },
             ))
         })?

@@ -7,7 +7,11 @@ export type View =
     | { kind: "sources" }
     | { kind: "albums" }
     | { kind: "album"; id: number; name: string }
-    | { kind: "asset"; id: number; back: View };
+    | { kind: "asset"; id: number; back: View }
+    | { kind: "search" }
+    | { kind: "map" }
+    | { kind: "people" }
+    | { kind: "duplicates" };
 
 interface SessionStore {
     session: SessionHandle | null;
