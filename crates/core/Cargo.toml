@@ -19,7 +19,11 @@ workspace = true
 # with `--features ml-models`. The rest of the pipeline (pHash, near-dup,
 # search metadata filters, face/person CRUD) works without the flag.
 default = []
-ml-models = []
+ml-models = ["dep:ort", "dep:tokenizers", "dep:ndarray", "dep:pathfinding", "dep:sha2"]
+# Optional execution-provider passthroughs. Off by default; pick one based on
+# the box you're targeting. No-op when `ml-models` is off.
+ml-cuda = ["ml-models", "ort?/cuda"]
+ml-coreml = ["ml-models", "ort?/coreml"]
 
 [dependencies]
 thiserror.workspace = true
@@ -56,6 +60,13 @@ mime.workspace = true
 infer.workspace = true
 
 ts-rs.workspace = true
+
+# Phase 2.1 — optional ML deps, pulled in only via the `ml-models` feature.
+ort = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
+pathfinding = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

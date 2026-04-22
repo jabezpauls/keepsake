@@ -122,3 +122,14 @@ tempfile = "3"
 
 # Tauri IPC codegen
 ts-rs = { version = "10", features = ["chrono-impl", "serde-compat"] }
+
+# Phase 2.1 — on-device ML (optional; pulled in only when `ml-models` feature is
+# enabled on the consuming crate). Pinned to rc.10 to avoid the moving v2 line.
+# `load-dynamic` means we resolve libonnxruntime at runtime via ORT_DYLIB_PATH
+# rather than static-linking vendored binaries — bundling is a Phase-3 packaging
+# concern, not Phase 2.1.
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "ndarray", "copy-dylibs"] }
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+ndarray = "0.16"
+pathfinding = "4"
+sha2 = "0.10"
