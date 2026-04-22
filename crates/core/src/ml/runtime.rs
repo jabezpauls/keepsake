@@ -66,7 +66,7 @@ impl MlRuntime {
     }
 
     #[cfg(not(feature = "ml-models"))]
-    pub fn provider_label(&self) -> &str {
+    pub fn provider_label(&self) -> &'static str {
         "disabled"
     }
 }

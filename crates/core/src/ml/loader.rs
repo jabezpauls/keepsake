@@ -11,7 +11,7 @@
 //! `wise-strolling-otter.md` for the BYO-URLs rationale.
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use ort::execution_providers::{
     CPUExecutionProvider, CoreMLExecutionProvider, CUDAExecutionProvider, ExecutionProviderDispatch,
@@ -22,15 +22,20 @@ use super::manifest;
 use super::runtime::ExecutionProvider;
 use crate::{Error, Result};
 
-/// The four ONNX sessions the Phase 2.1 pipeline needs.
+/// Reference-counted ONNX session with interior mutability.
 ///
-/// `Session` is not `Clone`, so we wrap each in `Arc` for the few places that
-/// share across worker tasks (`worker_exec::run_*` and `search::maybe_clip_rerank`).
+/// `ort::Session::run` takes `&mut self` (even though ORT_Run is thread-safe
+/// in C — a Rust-side convention of the binding), so we wrap in `Mutex` to
+/// share across worker tasks. Inference is long-running (10–100 ms per
+/// image); lock contention is not a realistic bottleneck.
+pub type SharedSession = Arc<Mutex<Session>>;
+
+/// The four ONNX sessions the Phase 2.1 pipeline needs.
 pub struct Sessions {
-    pub clip_visual: Arc<Session>,
-    pub clip_textual: Arc<Session>,
-    pub scrfd: Arc<Session>,
-    pub arcface: Arc<Session>,
+    pub clip_visual: SharedSession,
+    pub clip_textual: SharedSession,
+    pub scrfd: SharedSession,
+    pub arcface: SharedSession,
     /// Human-readable name of the provider the sessions actually loaded with.
     /// Reported back through `ml_status` so the UI can show "running on Cuda".
     pub provider_label: String,
@@ -48,7 +53,7 @@ pub fn load_all(model_dir: &Path, preferred: ExecutionProvider) -> Result<Sessio
     manifest::verify_all(model_dir)?;
 
     let providers = build_provider_list(preferred);
-    let provider_label = provider_list_label(&preferred);
+    let provider_label = provider_list_label(preferred);
 
     let clip_visual = build_session(model_dir, "clip_visual.onnx", &providers)?;
     let clip_textual = build_session(model_dir, "clip_textual.onnx", &providers)?;
@@ -82,10 +87,10 @@ pub fn load_all(model_dir: &Path, preferred: ExecutionProvider) -> Result<Sessio
     }
 
     Ok(Sessions {
-        clip_visual: Arc::new(clip_visual),
-        clip_textual: Arc::new(clip_textual),
-        scrfd: Arc::new(scrfd),
-        arcface: Arc::new(arcface),
+        clip_visual: Arc::new(Mutex::new(clip_visual)),
+        clip_textual: Arc::new(Mutex::new(clip_textual)),
+        scrfd: Arc::new(Mutex::new(scrfd)),
+        arcface: Arc::new(Mutex::new(arcface)),
         provider_label,
     })
 }
@@ -130,7 +135,7 @@ fn build_provider_list(preferred: ExecutionProvider) -> Vec<ExecutionProviderDis
     }
 }
 
-fn provider_list_label(preferred: &ExecutionProvider) -> String {
+fn provider_list_label(preferred: ExecutionProvider) -> String {
     match preferred {
         ExecutionProvider::Auto => "Auto".to_string(),
         ExecutionProvider::Cpu => "Cpu".to_string(),
@@ -176,10 +181,10 @@ mod tests {
 
     #[test]
     fn provider_labels_are_stable() {
-        assert_eq!(provider_list_label(&ExecutionProvider::Auto), "Auto");
-        assert_eq!(provider_list_label(&ExecutionProvider::Cpu), "Cpu");
-        assert_eq!(provider_list_label(&ExecutionProvider::Cuda), "Cuda");
-        assert_eq!(provider_list_label(&ExecutionProvider::CoreMl), "CoreMl");
+        assert_eq!(provider_list_label(ExecutionProvider::Auto), "Auto");
+        assert_eq!(provider_list_label(ExecutionProvider::Cpu), "Cpu");
+        assert_eq!(provider_list_label(ExecutionProvider::Cuda), "Cuda");
+        assert_eq!(provider_list_label(ExecutionProvider::CoreMl), "CoreMl");
     }
 
     // Tier-B: requires real model weights at MV_MODELS.
@@ -193,7 +198,7 @@ mod tests {
         let sessions = load_all(Path::new(&dir), ExecutionProvider::Auto)
             .expect("real weights should load cleanly");
         // Spot-check input/output counts match CLIP/ArcFace expectations.
-        assert_eq!(sessions.clip_visual.outputs.len(), 1);
-        assert_eq!(sessions.arcface.outputs.len(), 1);
+        assert_eq!(sessions.clip_visual.lock().unwrap().outputs.len(), 1);
+        assert_eq!(sessions.arcface.lock().unwrap().outputs.len(), 1);
     }
 }
