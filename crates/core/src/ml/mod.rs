@@ -25,6 +25,9 @@ pub mod loader;
 #[cfg(feature = "ml-models")]
 pub mod clip;
 
+#[cfg(feature = "ml-models")]
+pub mod tokenizer;
+
 pub use runtime::{ExecutionProvider, MlConfig, MlJobKind, MlRuntime, MlWorker};
 
 /// Compile-time flag: true when the `ml-models` feature is enabled. Callers

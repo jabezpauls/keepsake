@@ -13,10 +13,11 @@
 
 use image::imageops::FilterType;
 use image::GenericImageView;
-use ndarray::{Array1, Array4};
+use ndarray::{Array1, Array2, Array4};
 use ort::value::TensorRef;
 
 use super::loader::SharedSession;
+use super::tokenizer::{ClipTokenizer, CLIP_CTX};
 use crate::{Error, Result};
 
 /// CLIP ViT-L/14 input size. FROZEN.
@@ -146,6 +147,54 @@ fn run_visual(session: &SharedSession, tensor: Array4<f32>) -> Result<Vec<f32>> 
         ));
     }
 
+    let mut arr = Array1::from_vec(data.to_vec());
+    l2_normalize(arr.as_slice_mut().expect("contiguous"));
+    Ok(arr.to_vec())
+}
+
+/// Tokenise + embed a natural-language query into a 768-d unit vector.
+/// Returned vector is directly comparable (cosine == dot) against the
+/// 768-d vectors stored in `asset_vec` for visual search.
+pub fn embed_text(
+    session: &SharedSession,
+    tokenizer: &ClipTokenizer,
+    text: &str,
+) -> Result<Vec<f32>> {
+    let ids = tokenizer.encode(text)?;
+    debug_assert_eq!(ids.len(), CLIP_CTX);
+    let tokens = Array2::<i64>::from_shape_vec((1, CLIP_CTX), ids)
+        .map_err(|e| Error::Ingest(format!("clip text tensor: {e}")))?;
+
+    let view = tokens.view();
+    let input = TensorRef::from_array_view(view)
+        .map_err(|e| Error::Media(format!("clip text input: {e}")))?;
+    let mut sess = session
+        .lock()
+        .map_err(|_| Error::Ingest("clip text session mutex poisoned".into()))?;
+    let outputs = sess
+        .run(ort::inputs![input])
+        .map_err(|e| Error::Media(format!("clip text run: {e}")))?;
+
+    let (_, first) = outputs.iter().next().ok_or(Error::MlModelShape(
+        "clip_textual.onnx: no output tensor returned at run time",
+    ))?;
+    let (shape, data) = first
+        .try_extract_tensor::<f32>()
+        .map_err(|e| Error::Media(format!("clip text extract: {e}")))?;
+    let dims = shape.as_ref();
+    let last = *dims.last().ok_or(Error::MlModelShape(
+        "clip_textual.onnx: empty output shape",
+    ))?;
+    if last != CLIP_DIM as i64 {
+        return Err(Error::MlModelShape(
+            "clip_textual.onnx: last-dim != 768",
+        ));
+    }
+    if data.len() != CLIP_DIM {
+        return Err(Error::MlModelShape(
+            "clip_textual.onnx: pooled output expected, got multi-token tensor",
+        ));
+    }
     let mut arr = Array1::from_vec(data.to_vec());
     l2_normalize(arr.as_slice_mut().expect("contiguous"));
     Ok(arr.to_vec())

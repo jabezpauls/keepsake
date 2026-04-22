@@ -41,6 +41,9 @@ pub struct MlRuntime {
     config: MlConfig,
     #[cfg(feature = "ml-models")]
     pub(crate) sessions: super::loader::Sessions,
+    #[cfg(feature = "ml-models")]
+    #[allow(dead_code)] // wired through worker_exec + search in later commits
+    pub(crate) tokenizer: super::tokenizer::ClipTokenizer,
 }
 
 impl MlRuntime {
@@ -50,7 +53,12 @@ impl MlRuntime {
     #[cfg(feature = "ml-models")]
     pub fn load(config: MlConfig) -> Result<Self> {
         let sessions = super::loader::load_all(&config.model_dir, config.execution_provider)?;
-        Ok(Self { config, sessions })
+        let tokenizer = super::tokenizer::ClipTokenizer::load(&config.model_dir)?;
+        Ok(Self {
+            config,
+            sessions,
+            tokenizer,
+        })
     }
 
     #[cfg(not(feature = "ml-models"))]
