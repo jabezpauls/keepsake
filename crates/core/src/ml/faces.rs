@@ -15,6 +15,13 @@
 
 use std::cmp::Ordering;
 
+use ndarray::{Array1, Array4};
+use ort::value::TensorRef;
+
+use super::clip::l2_normalize;
+use super::loader::SharedSession;
+use crate::{Error, Result};
+
 /// One detected face in the original-image coordinate system.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FaceDetection {
@@ -37,6 +44,23 @@ pub const SCRFD_INPUT: u32 = 640;
 pub const DEFAULT_SCORE_THR: f32 = 0.5;
 /// Default NMS IoU threshold.
 pub const DEFAULT_NMS_IOU: f32 = 0.4;
+
+/// ArcFace 112×112 destination template (5 points: left-eye, right-eye,
+/// nose, mouth-left, mouth-right). FROZEN — changing these shifts every
+/// embedding and invalidates the stored face index. See InsightFace
+/// reference for provenance.
+pub const ARCFACE_TEMPLATE: [(f32, f32); 5] = [
+    (38.2946, 51.6963),
+    (73.5318, 51.5014),
+    (56.0252, 71.7366),
+    (41.5493, 92.3655),
+    (70.7299, 92.2041),
+];
+
+/// ArcFace input crop size (pixels, square). FROZEN.
+pub const ARCFACE_INPUT: u32 = 112;
+/// ArcFace embedding dimension. FROZEN per architecture.md §4.2.
+pub const ARCFACE_DIM: usize = 512;
 
 /// One SCRFD detection candidate in network-input coordinates (the 640×640
 /// letterboxed frame). `decode_stride` emits these before NMS + inverse-
@@ -188,6 +212,187 @@ pub fn letterbox_params(orig_w: u32, orig_h: u32, input_size: u32) -> (f32, f32,
     (s, pad_x, pad_y)
 }
 
+/// 2D similarity transform (rotation + uniform scale + translation) from
+/// source → destination point sets, in the Procrustes / closed-form variant
+/// (Umeyama without the SVD — for similarity transforms this reduces to
+/// elementary sums). Returns a 2×3 affine matrix stored row-major as
+/// `[a, b, tx,  c, d, ty]` such that `dst = M * [src; 1]`.
+///
+/// When all source points are identical (degenerate), returns a pure
+/// translation that places them at the destination centroid.
+pub fn similarity_transform(src: &[(f32, f32); 5], dst: &[(f32, f32); 5]) -> [f32; 6] {
+    let n = src.len() as f32;
+    let sx: f32 = src.iter().map(|p| p.0).sum::<f32>() / n;
+    let sy: f32 = src.iter().map(|p| p.1).sum::<f32>() / n;
+    let dx: f32 = dst.iter().map(|p| p.0).sum::<f32>() / n;
+    let dy: f32 = dst.iter().map(|p| p.1).sum::<f32>() / n;
+
+    let mut num_cos = 0.0f32;
+    let mut num_sin = 0.0f32;
+    let mut denom = 0.0f32;
+    for (s, d) in src.iter().zip(dst.iter()) {
+        let (ax, ay) = (s.0 - sx, s.1 - sy);
+        let (bx, by) = (d.0 - dx, d.1 - dy);
+        num_cos += ax * bx + ay * by;
+        num_sin += ax * by - ay * bx;
+        denom += ax * ax + ay * ay;
+    }
+    let (a, b) = if denom < 1e-12 {
+        (1.0, 0.0) // degenerate — skip rotation/scale, rely on translation below.
+    } else {
+        (num_cos / denom, num_sin / denom)
+    };
+    // a = s·cos θ, b = s·sin θ. So 2×3 is [[a, -b, tx], [b, a, ty]].
+    let tx = dx - (a * sx - b * sy);
+    let ty = dy - (b * sx + a * sy);
+    [a, -b, tx, b, a, ty]
+}
+
+/// Apply a 2×3 similarity to a point.
+pub fn apply_affine(m: &[f32; 6], p: (f32, f32)) -> (f32, f32) {
+    (
+        m[0] * p.0 + m[1] * p.1 + m[2],
+        m[3] * p.0 + m[4] * p.1 + m[5],
+    )
+}
+
+/// Invert a similarity matrix (rotation + uniform scale + translation).
+/// Returns `None` when the transform collapses (zero scale).
+pub fn invert_similarity(m: &[f32; 6]) -> Option<[f32; 6]> {
+    // M = [[a, -b, tx], [b, a, ty]]; det = a² + b².
+    let a = m[0];
+    let neg_b = m[1];
+    let b = m[3];
+    // Consistency assertion: m[4] should equal a. If it doesn't we're past a
+    // pure similarity and the cheap inverse isn't valid.
+    debug_assert!((m[4] - a).abs() < 1e-4);
+    debug_assert!((m[1] + b).abs() < 1e-4);
+    let det = a * a + b * b;
+    if det < 1e-12 {
+        return None;
+    }
+    let inv = 1.0 / det;
+    let ia = a * inv;
+    let ib = -b * inv;
+    // Inverse of a similarity: rotation^T / s² with translation (-R^T t / s²).
+    // Written out in M-row form:
+    let itx = -(ia * m[2] - ib * m[5]);
+    let ity = -(ib * m[2] + ia * m[5]);
+    let _ = neg_b; // kept for the debug_assert only
+    Some([ia, -ib, itx, ib, ia, ity])
+}
+
+/// Sample an RGB8 image at sub-pixel coordinates using bilinear
+/// interpolation. Returns black for out-of-bounds reads (matches ArcFace's
+/// reference warpAffine behaviour with BORDER_CONSTANT=0).
+pub fn bilinear_sample(img: &image::RgbImage, x: f32, y: f32) -> [u8; 3] {
+    let w = img.width() as i32;
+    let h = img.height() as i32;
+    let x0 = x.floor() as i32;
+    let y0 = y.floor() as i32;
+    let x1 = x0 + 1;
+    let y1 = y0 + 1;
+    let dx = x - x0 as f32;
+    let dy = y - y0 as f32;
+
+    let get = |gx: i32, gy: i32| -> [f32; 3] {
+        if gx < 0 || gy < 0 || gx >= w || gy >= h {
+            [0.0, 0.0, 0.0]
+        } else {
+            let p = img.get_pixel(gx as u32, gy as u32);
+            [f32::from(p[0]), f32::from(p[1]), f32::from(p[2])]
+        }
+    };
+    let p00 = get(x0, y0);
+    let p10 = get(x1, y0);
+    let p01 = get(x0, y1);
+    let p11 = get(x1, y1);
+    let mut out = [0u8; 3];
+    for c in 0..3 {
+        let v = p00[c] * (1.0 - dx) * (1.0 - dy)
+            + p10[c] * dx * (1.0 - dy)
+            + p01[c] * (1.0 - dx) * dy
+            + p11[c] * dx * dy;
+        out[c] = v.round().clamp(0.0, 255.0) as u8;
+    }
+    out
+}
+
+/// Align a detected face into a 112×112 ArcFace-ready crop using the
+/// detected 5-point landmarks and the canonical destination template.
+///
+/// Returns the aligned crop as an `RgbImage` — callers decide whether to
+/// convert to the ArcFace input tensor (`arcface_preprocess`) or save
+/// for debugging.
+pub fn align_face(img: &image::RgbImage, landmarks: &[(f32, f32); 5]) -> image::RgbImage {
+    let m = similarity_transform(landmarks, &ARCFACE_TEMPLATE);
+    // Warp by applying M^-1 to each output pixel and sampling source.
+    let inv = invert_similarity(&m).unwrap_or([1.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+    let mut out = image::RgbImage::new(ARCFACE_INPUT, ARCFACE_INPUT);
+    for y in 0..ARCFACE_INPUT {
+        for x in 0..ARCFACE_INPUT {
+            let (sx, sy) = apply_affine(&inv, (x as f32, y as f32));
+            let px = bilinear_sample(img, sx, sy);
+            out.put_pixel(x, y, image::Rgb(px));
+        }
+    }
+    out
+}
+
+/// Build the ArcFace input tensor from an aligned 112×112 RGB crop.
+/// InsightFace convention: BGR channel order, normalised by (x - 127.5) / 128
+/// per channel, shape (1, 3, 112, 112).
+pub fn arcface_preprocess(aligned: &image::RgbImage) -> Array4<f32> {
+    debug_assert_eq!(aligned.width(), ARCFACE_INPUT);
+    debug_assert_eq!(aligned.height(), ARCFACE_INPUT);
+    let mut t = Array4::<f32>::zeros((1, 3, ARCFACE_INPUT as usize, ARCFACE_INPUT as usize));
+    for (y, row) in aligned.rows().enumerate() {
+        for (x, px) in row.enumerate() {
+            // RGB → BGR reorder on the channel axis.
+            t[[0, 0, y, x]] = (f32::from(px[2]) - 127.5) / 128.0;
+            t[[0, 1, y, x]] = (f32::from(px[1]) - 127.5) / 128.0;
+            t[[0, 2, y, x]] = (f32::from(px[0]) - 127.5) / 128.0;
+        }
+    }
+    t
+}
+
+/// Full align + embed. Returns a 512-d unit vector.
+pub fn embed_face(
+    session: &SharedSession,
+    full_img: &image::RgbImage,
+    landmarks: &[(f32, f32); 5],
+) -> Result<Vec<f32>> {
+    let aligned = align_face(full_img, landmarks);
+    let tensor = arcface_preprocess(&aligned);
+    let view = tensor.view();
+    let input = TensorRef::from_array_view(view)
+        .map_err(|e| Error::Media(format!("arcface input: {e}")))?;
+    let mut sess = session
+        .lock()
+        .map_err(|_| Error::Ingest("arcface session mutex poisoned".into()))?;
+    let outputs = sess
+        .run(ort::inputs![input])
+        .map_err(|e| Error::Media(format!("arcface run: {e}")))?;
+    let (_, first) = outputs.iter().next().ok_or(Error::MlModelShape(
+        "arcface.onnx: no output tensor at run time",
+    ))?;
+    let (shape, data) = first
+        .try_extract_tensor::<f32>()
+        .map_err(|e| Error::Media(format!("arcface extract: {e}")))?;
+    let last = *shape.as_ref().last().ok_or(Error::MlModelShape(
+        "arcface.onnx: empty output shape",
+    ))?;
+    if last != ARCFACE_DIM as i64 || data.len() != ARCFACE_DIM {
+        return Err(Error::MlModelShape(
+            "arcface.onnx: expected 512-d pooled output",
+        ));
+    }
+    let mut arr = Array1::from_vec(data.to_vec());
+    l2_normalize(arr.as_slice_mut().expect("contiguous"));
+    Ok(arr.to_vec())
+}
+
 // =========== TESTS ============================================================
 
 #[cfg(test)]
@@ -295,6 +500,103 @@ mod tests {
         assert!((s - 0.5).abs() < 1e-6);
         assert!((px - 0.0).abs() < 1e-6);
         assert!((py - 160.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn similarity_transform_template_to_template_is_identity() {
+        // Mapping the ArcFace template to itself should return the identity
+        // matrix (modulo float noise).
+        let m = similarity_transform(&ARCFACE_TEMPLATE, &ARCFACE_TEMPLATE);
+        assert!((m[0] - 1.0).abs() < 1e-4, "a={}", m[0]);
+        assert!(m[1].abs() < 1e-4, "b_neg={}", m[1]);
+        assert!(m[2].abs() < 1e-3, "tx={}", m[2]);
+        assert!(m[3].abs() < 1e-4, "b={}", m[3]);
+        assert!((m[4] - 1.0).abs() < 1e-4, "a2={}", m[4]);
+        assert!(m[5].abs() < 1e-3, "ty={}", m[5]);
+    }
+
+    #[test]
+    fn similarity_transform_maps_scaled_translated_points_correctly() {
+        // src is template scaled 2x and shifted by (100, 50).
+        let src: [(f32, f32); 5] = std::array::from_fn(|i| {
+            let (x, y) = ARCFACE_TEMPLATE[i];
+            (x * 2.0 + 100.0, y * 2.0 + 50.0)
+        });
+        let m = similarity_transform(&src, &ARCFACE_TEMPLATE);
+        // Forward-mapping each src point should land on the template (within
+        // numeric noise).
+        for (i, s) in src.iter().enumerate() {
+            let (dx, dy) = apply_affine(&m, *s);
+            let (tx, ty) = ARCFACE_TEMPLATE[i];
+            assert!((dx - tx).abs() < 1e-2, "x off: got {dx} expected {tx}");
+            assert!((dy - ty).abs() < 1e-2, "y off: got {dy} expected {ty}");
+        }
+    }
+
+    #[test]
+    fn invert_similarity_composes_to_identity() {
+        let src: [(f32, f32); 5] =
+            std::array::from_fn(|i| (ARCFACE_TEMPLATE[i].0 * 3.0, ARCFACE_TEMPLATE[i].1 * 3.0));
+        let m = similarity_transform(&src, &ARCFACE_TEMPLATE);
+        let inv = invert_similarity(&m).expect("non-degenerate");
+        // M ∘ M^-1 applied to a test point should return the point.
+        let p = (42.0, 99.0);
+        let m_p = apply_affine(&m, p);
+        let round = apply_affine(&inv, m_p);
+        assert!((round.0 - p.0).abs() < 1e-2);
+        assert!((round.1 - p.1).abs() < 1e-2);
+    }
+
+    #[test]
+    fn bilinear_sample_at_integer_coord_matches_pixel() {
+        let mut img = image::RgbImage::new(4, 4);
+        img.put_pixel(2, 1, image::Rgb([200, 100, 50]));
+        let got = bilinear_sample(&img, 2.0, 1.0);
+        assert_eq!(got, [200, 100, 50]);
+    }
+
+    #[test]
+    fn align_face_with_template_landmarks_is_near_identity_crop() {
+        // Synthesise a 112×112 image whose "landmarks" already sit at the
+        // template. Alignment should return effectively the same image.
+        let mut img = image::RgbImage::from_pixel(
+            ARCFACE_INPUT,
+            ARCFACE_INPUT,
+            image::Rgb([40, 80, 160]),
+        );
+        // Mark each template position with a distinctive pixel.
+        for (x, y) in &ARCFACE_TEMPLATE {
+            img.put_pixel(*x as u32, *y as u32, image::Rgb([255, 0, 0]));
+        }
+        let aligned = align_face(&img, &ARCFACE_TEMPLATE);
+        // The marker pixels (or their neighbours post-bilinear) should still
+        // have a strongly red dominant channel at the expected positions.
+        for (x, y) in &ARCFACE_TEMPLATE {
+            let px = aligned.get_pixel(*x as u32, *y as u32);
+            assert!(
+                px[0] as i32 > px[1] as i32 && px[0] as i32 > px[2] as i32,
+                "red dominance lost at ({x}, {y}): {:?}",
+                px.0
+            );
+        }
+    }
+
+    #[test]
+    fn arcface_preprocess_shape_and_normalisation() {
+        let img = image::RgbImage::from_pixel(
+            ARCFACE_INPUT,
+            ARCFACE_INPUT,
+            image::Rgb([255, 127, 0]),
+        );
+        let t = arcface_preprocess(&img);
+        assert_eq!(t.shape(), &[1, 3, 112, 112]);
+        // BGR order: channel 0 = B = 0, channel 1 = G = 127, channel 2 = R = 255.
+        let b = t[[0, 0, 0, 0]];
+        let g = t[[0, 1, 0, 0]];
+        let r = t[[0, 2, 0, 0]];
+        assert!((b - ((0.0 - 127.5) / 128.0)).abs() < 1e-5);
+        assert!((g - ((127.0 - 127.5) / 128.0)).abs() < 1e-5);
+        assert!((r - ((255.0 - 127.5) / 128.0)).abs() < 1e-5);
     }
 
     #[test]
