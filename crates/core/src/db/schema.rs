@@ -152,6 +152,49 @@ CREATE TABLE IF NOT EXISTS derivative (
 );
 ";
 
+/// DDL additions shipped in schema version 2 (Phase 2). Additive only.
+///
+/// Adds:
+/// - `ml_job` persistent worker queue (plaintext — leaks work-load size only).
+/// - `nd_cluster` near-duplicate cluster membership (plaintext — pHash is
+///   already leaky so cluster shape is no worse).
+/// - `asset_vec` plaintext CLIP embedding cache; similarity structure leaks
+///   by design per architecture.md §4.3.
+/// - `path_hash` column + partial unique index on `asset_location` so re-ingest
+///   of an unchanged path becomes a true no-op.
+pub const DDL_V2: &str = r"
+CREATE TABLE IF NOT EXISTS ml_job (
+    id            INTEGER PRIMARY KEY,
+    kind          TEXT NOT NULL,
+    asset_id      INTEGER REFERENCES asset(id),
+    state         TEXT NOT NULL DEFAULT 'pending',
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    last_error    TEXT,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ml_job_state ON ml_job(state, kind);
+CREATE INDEX IF NOT EXISTS idx_ml_job_asset ON ml_job(asset_id, kind);
+
+CREATE TABLE IF NOT EXISTS nd_cluster (
+    cluster_id  INTEGER NOT NULL,
+    asset_id    INTEGER NOT NULL REFERENCES asset(id),
+    is_best     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (cluster_id, asset_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nd_cluster_asset ON nd_cluster(asset_id);
+
+CREATE TABLE IF NOT EXISTS asset_vec (
+    asset_id   INTEGER PRIMARY KEY REFERENCES asset(id),
+    embedding  BLOB NOT NULL
+);
+
+ALTER TABLE asset_location ADD COLUMN path_hash BLOB;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_location_path_hash
+    ON asset_location(asset_id, source_id, path_hash)
+    WHERE path_hash IS NOT NULL;
+";
+
 /// Set up an open SQLite connection with the Phase-1 pragmas.
 pub fn configure_connection(conn: &Connection) -> Result<()> {
     // WAL + foreign keys + synchronous=NORMAL per §4.

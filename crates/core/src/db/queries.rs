@@ -257,6 +257,40 @@ pub fn insert_asset_location(
     Ok(())
 }
 
+/// Insert an `asset_location` row keyed on the deterministic 16-byte `path_hash`.
+///
+/// The Phase-1 PK `(asset_id, source_id, original_path_ct)` can't dedupe on
+/// re-ingest because `original_path_ct` uses a fresh nonce. Phase 2 adds a
+/// partial unique index on `(asset_id, source_id, path_hash)` and this helper
+/// uses it so a repeated walk of the same folder is a no-op instead of an
+/// ever-growing location list.
+pub fn insert_asset_location_deduped(
+    conn: &Connection,
+    asset_id: i64,
+    source_id: i64,
+    original_path_ct: &[u8],
+    path_hash: &[u8],
+    mtime: i64,
+) -> Result<()> {
+    // Pre-check via the unique partial index; if already present we skip the
+    // insert entirely to avoid burning a rowid on conflict-then-ignore.
+    let exists: i64 = conn.query_row(
+        r"SELECT COUNT(*) FROM asset_location
+          WHERE asset_id = ?1 AND source_id = ?2 AND path_hash = ?3",
+        params![asset_id, source_id, path_hash],
+        |r| r.get(0),
+    )?;
+    if exists > 0 {
+        return Ok(());
+    }
+    conn.execute(
+        r"INSERT INTO asset_location (asset_id, source_id, original_path_ct, mtime, path_hash)
+          VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![asset_id, source_id, original_path_ct, mtime, path_hash],
+    )?;
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct TimelineEntry {
     pub id: i64,
@@ -611,6 +645,563 @@ pub fn get_derivative(conn: &Connection, asset_id: i64, kind: &str) -> Result<Op
     Ok(r)
 }
 
+// --------- PHASH --------------------------------------------------------------
+
+pub fn upsert_phash(conn: &Connection, asset_id: i64, hash: u64) -> Result<()> {
+    conn.execute(
+        r"INSERT INTO phash (asset_id, hash) VALUES (?1, ?2)
+          ON CONFLICT(asset_id) DO UPDATE SET hash = excluded.hash",
+        params![asset_id, hash as i64],
+    )?;
+    Ok(())
+}
+
+pub fn get_phash(conn: &Connection, asset_id: i64) -> Result<Option<u64>> {
+    let r = conn
+        .query_row(
+            "SELECT hash FROM phash WHERE asset_id = ?1",
+            params![asset_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()?;
+    Ok(r.map(|v| v as u64))
+}
+
+pub fn list_phashes(conn: &Connection) -> Result<Vec<(i64, u64)>> {
+    let mut stmt = conn.prepare("SELECT asset_id, hash FROM phash")?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as u64))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+// --------- NEAR-DUP CLUSTERS --------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct NdClusterMember {
+    pub cluster_id: i64,
+    pub asset_id: i64,
+    pub is_best: bool,
+}
+
+pub fn replace_nd_clusters(conn: &Connection, members: &[NdClusterMember]) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM nd_cluster", [])?;
+    {
+        let mut stmt = tx.prepare(
+            r"INSERT INTO nd_cluster (cluster_id, asset_id, is_best)
+              VALUES (?1, ?2, ?3)",
+        )?;
+        for m in members {
+            stmt.execute(params![m.cluster_id, m.asset_id, m.is_best as i64])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn list_nd_clusters(conn: &Connection) -> Result<Vec<NdClusterMember>> {
+    let mut stmt = conn.prepare(
+        r"SELECT cluster_id, asset_id, is_best FROM nd_cluster
+          ORDER BY cluster_id, asset_id",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(NdClusterMember {
+                cluster_id: r.get(0)?,
+                asset_id: r.get(1)?,
+                is_best: r.get::<_, i64>(2)? != 0,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn delete_nd_cluster(conn: &Connection, cluster_id: i64) -> Result<()> {
+    conn.execute(
+        "DELETE FROM nd_cluster WHERE cluster_id = ?1",
+        params![cluster_id],
+    )?;
+    Ok(())
+}
+
+// --------- ML JOB QUEUE -------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MlJobRow {
+    pub id: i64,
+    pub kind: String,
+    pub asset_id: Option<i64>,
+    pub state: String,
+    pub attempts: i64,
+    pub last_error: Option<String>,
+}
+
+pub fn enqueue_ml_job(
+    conn: &Connection,
+    kind: &str,
+    asset_id: Option<i64>,
+    now: i64,
+) -> Result<i64> {
+    // Skip if a non-terminal job of the same (kind, asset_id) already exists.
+    let existing: Option<i64> = conn
+        .query_row(
+            r"SELECT id FROM ml_job
+              WHERE kind = ?1 AND COALESCE(asset_id, -1) = COALESCE(?2, -1)
+                AND state IN ('pending','running')
+              LIMIT 1",
+            params![kind, asset_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(id) = existing {
+        return Ok(id);
+    }
+    conn.execute(
+        r"INSERT INTO ml_job (kind, asset_id, state, created_at, updated_at)
+          VALUES (?1, ?2, 'pending', ?3, ?3)",
+        params![kind, asset_id, now],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn claim_next_ml_job(conn: &Connection, now: i64) -> Result<Option<MlJobRow>> {
+    let tx = conn.unchecked_transaction()?;
+    let row: Option<MlJobRow> = tx
+        .query_row(
+            r"SELECT id, kind, asset_id, state, attempts, last_error
+              FROM ml_job WHERE state = 'pending'
+              ORDER BY id LIMIT 1",
+            [],
+            |r| {
+                Ok(MlJobRow {
+                    id: r.get(0)?,
+                    kind: r.get(1)?,
+                    asset_id: r.get(2)?,
+                    state: r.get(3)?,
+                    attempts: r.get(4)?,
+                    last_error: r.get(5)?,
+                })
+            },
+        )
+        .optional()?;
+    if let Some(ref job) = row {
+        tx.execute(
+            r"UPDATE ml_job SET state = 'running', updated_at = ?2, attempts = attempts + 1
+              WHERE id = ?1",
+            params![job.id, now],
+        )?;
+    }
+    tx.commit()?;
+    Ok(row)
+}
+
+pub fn finish_ml_job(conn: &Connection, id: i64, now: i64) -> Result<()> {
+    conn.execute(
+        r"UPDATE ml_job SET state = 'done', updated_at = ?2, last_error = NULL WHERE id = ?1",
+        params![id, now],
+    )?;
+    Ok(())
+}
+
+pub fn fail_ml_job(conn: &Connection, id: i64, err: &str, now: i64) -> Result<()> {
+    conn.execute(
+        r"UPDATE ml_job SET state = 'failed', updated_at = ?2, last_error = ?3 WHERE id = ?1",
+        params![id, now, err],
+    )?;
+    Ok(())
+}
+
+pub fn count_ml_jobs_by_state(conn: &Connection) -> Result<Vec<(String, i64)>> {
+    let mut stmt =
+        conn.prepare(r"SELECT state, COUNT(*) FROM ml_job GROUP BY state ORDER BY state")?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+// --------- ASSET_VEC (plaintext CLIP embedding cache) -------------------------
+
+/// Store a 768-d f32 embedding. Bytes are little-endian IEEE 754.
+pub fn upsert_asset_vec(conn: &Connection, asset_id: i64, embedding: &[f32]) -> Result<()> {
+    // serialise as little-endian f32 bytes.
+    let mut bytes = Vec::with_capacity(embedding.len() * 4);
+    for f in embedding {
+        bytes.extend_from_slice(&f.to_le_bytes());
+    }
+    conn.execute(
+        r"INSERT INTO asset_vec (asset_id, embedding) VALUES (?1, ?2)
+          ON CONFLICT(asset_id) DO UPDATE SET embedding = excluded.embedding",
+        params![asset_id, bytes],
+    )?;
+    Ok(())
+}
+
+pub fn get_asset_vec(conn: &Connection, asset_id: i64) -> Result<Option<Vec<f32>>> {
+    let bytes: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT embedding FROM asset_vec WHERE asset_id = ?1",
+            params![asset_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(bytes.map(|b| decode_f32_vec(&b)))
+}
+
+pub fn list_asset_vecs(conn: &Connection) -> Result<Vec<(i64, Vec<f32>)>> {
+    let mut stmt = conn.prepare("SELECT asset_id, embedding FROM asset_vec")?;
+    let rows = stmt
+        .query_map([], |r| {
+            let id: i64 = r.get(0)?;
+            let b: Vec<u8> = r.get(1)?;
+            Ok((id, decode_f32_vec(&b)))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+fn decode_f32_vec(b: &[u8]) -> Vec<f32> {
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
+
+// --------- PERSON / FACE ------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct PersonRow {
+    pub id: i64,
+    pub name_ct: Option<Vec<u8>>,
+    pub hidden: bool,
+}
+
+pub fn insert_person(conn: &Connection, owner_id: i64, name_ct: Option<&[u8]>) -> Result<i64> {
+    conn.execute(
+        r"INSERT INTO person (owner_id, name_ct, hidden) VALUES (?1, ?2, 0)",
+        params![owner_id, name_ct],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn set_person_name(conn: &Connection, person_id: i64, name_ct: &[u8]) -> Result<()> {
+    conn.execute(
+        "UPDATE person SET name_ct = ?1 WHERE id = ?2",
+        params![name_ct, person_id],
+    )?;
+    Ok(())
+}
+
+pub fn set_person_hidden(conn: &Connection, person_id: i64, hidden: bool) -> Result<()> {
+    conn.execute(
+        "UPDATE person SET hidden = ?1 WHERE id = ?2",
+        params![hidden as i64, person_id],
+    )?;
+    Ok(())
+}
+
+pub fn list_persons(
+    conn: &Connection,
+    owner_id: i64,
+    include_hidden: bool,
+) -> Result<Vec<PersonRow>> {
+    let sql = if include_hidden {
+        "SELECT id, name_ct, hidden FROM person WHERE owner_id = ?1 ORDER BY id"
+    } else {
+        "SELECT id, name_ct, hidden FROM person WHERE owner_id = ?1 AND hidden = 0 ORDER BY id"
+    };
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt
+        .query_map(params![owner_id], |r| {
+            Ok(PersonRow {
+                id: r.get(0)?,
+                name_ct: r.get(1)?,
+                hidden: r.get::<_, i64>(2)? != 0,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn delete_person(conn: &Connection, person_id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE face SET person_id = NULL WHERE person_id = ?1",
+        params![person_id],
+    )?;
+    conn.execute("DELETE FROM person WHERE id = ?1", params![person_id])?;
+    Ok(())
+}
+
+pub fn merge_persons(conn: &Connection, src: i64, dst: i64) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "UPDATE face SET person_id = ?2 WHERE person_id = ?1",
+        params![src, dst],
+    )?;
+    tx.execute("DELETE FROM person WHERE id = ?1", params![src])?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn reassign_faces_to_person(
+    conn: &Connection,
+    face_ids: &[i64],
+    person_id: Option<i64>,
+) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt = tx.prepare("UPDATE face SET person_id = ?1 WHERE id = ?2")?;
+        for id in face_ids {
+            stmt.execute(params![person_id, id])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct FaceRow {
+    pub id: i64,
+    pub asset_id: i64,
+    pub person_id: Option<i64>,
+    pub quality: Option<f64>,
+    pub bbox_ct: Vec<u8>,
+    pub embedding_ct: Vec<u8>,
+}
+
+pub fn insert_face(
+    conn: &Connection,
+    asset_id: i64,
+    quality: f64,
+    bbox_ct: &[u8],
+    embedding_ct: &[u8],
+) -> Result<i64> {
+    conn.execute(
+        r"INSERT INTO face (asset_id, person_id, quality, bbox_ct, embedding_ct)
+          VALUES (?1, NULL, ?2, ?3, ?4)",
+        params![asset_id, quality, bbox_ct, embedding_ct],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn list_faces_for_person(conn: &Connection, person_id: i64) -> Result<Vec<FaceRow>> {
+    let mut stmt = conn.prepare(
+        r"SELECT id, asset_id, person_id, quality, bbox_ct, embedding_ct
+          FROM face WHERE person_id = ?1 ORDER BY quality DESC, id",
+    )?;
+    let rows = stmt
+        .query_map(params![person_id], |r| {
+            Ok(FaceRow {
+                id: r.get(0)?,
+                asset_id: r.get(1)?,
+                person_id: r.get(2)?,
+                quality: r.get(3)?,
+                bbox_ct: r.get(4)?,
+                embedding_ct: r.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn list_all_faces(conn: &Connection) -> Result<Vec<FaceRow>> {
+    let mut stmt =
+        conn.prepare(r"SELECT id, asset_id, person_id, quality, bbox_ct, embedding_ct FROM face")?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(FaceRow {
+                id: r.get(0)?,
+                asset_id: r.get(1)?,
+                person_id: r.get(2)?,
+                quality: r.get(3)?,
+                bbox_ct: r.get(4)?,
+                embedding_ct: r.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn count_faces_by_person(conn: &Connection) -> Result<Vec<(Option<i64>, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT person_id, COUNT(*) FROM face GROUP BY person_id ORDER BY COUNT(*) DESC",
+    )?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+// --------- ASSET LIST (for search + clustering) -------------------------------
+
+/// Lightweight asset summary for search/filter paths.
+#[derive(Debug, Clone)]
+pub struct AssetLite {
+    pub id: i64,
+    pub taken_at_utc_day: Option<i64>,
+    pub mime: String,
+    pub cas_ref: String,
+    pub wrapped_file_key: Vec<u8>,
+    pub is_video: bool,
+    pub is_raw: bool,
+    pub is_screenshot: bool,
+    pub is_live: bool,
+    pub source_id: i64,
+    pub device_ct: Option<Vec<u8>>,
+    pub lens_ct: Option<Vec<u8>>,
+}
+
+/// Filters applied at the plaintext layer. Applied before any decrypt-in-memory
+/// post-filter.
+#[derive(Debug, Default, Clone)]
+pub struct AssetFilter {
+    pub after_day: Option<i64>,
+    pub before_day: Option<i64>,
+    pub source_id: Option<i64>,
+    pub is_video: Option<bool>,
+    pub is_raw: Option<bool>,
+    pub is_screenshot: Option<bool>,
+    pub is_live: Option<bool>,
+    pub limit: Option<u32>,
+}
+
+pub fn filter_assets(conn: &Connection, f: &AssetFilter) -> Result<Vec<AssetLite>> {
+    let mut sql = String::from(
+        r"SELECT id, taken_at_utc_day, mime, cas_ref, wrapped_file_key,
+                 is_video, is_raw, is_screenshot, is_live,
+                 source_id, device_ct, lens_ct
+          FROM asset WHERE 1=1",
+    );
+    let mut args: Vec<rusqlite::types::Value> = Vec::new();
+    if let Some(v) = f.after_day {
+        sql.push_str(" AND taken_at_utc_day >= ?");
+        args.push(v.into());
+    }
+    if let Some(v) = f.before_day {
+        sql.push_str(" AND taken_at_utc_day <= ?");
+        args.push(v.into());
+    }
+    if let Some(v) = f.source_id {
+        sql.push_str(" AND source_id = ?");
+        args.push(v.into());
+    }
+    if let Some(v) = f.is_video {
+        sql.push_str(" AND is_video = ?");
+        args.push((v as i64).into());
+    }
+    if let Some(v) = f.is_raw {
+        sql.push_str(" AND is_raw = ?");
+        args.push((v as i64).into());
+    }
+    if let Some(v) = f.is_screenshot {
+        sql.push_str(" AND is_screenshot = ?");
+        args.push((v as i64).into());
+    }
+    if let Some(v) = f.is_live {
+        sql.push_str(" AND is_live = ?");
+        args.push((v as i64).into());
+    }
+    sql.push_str(" ORDER BY COALESCE(taken_at_utc_day, 0) DESC, id DESC");
+    if let Some(v) = f.limit {
+        sql.push_str(" LIMIT ?");
+        args.push((v as i64).into());
+    }
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(args), |r| {
+            Ok(AssetLite {
+                id: r.get(0)?,
+                taken_at_utc_day: r.get(1)?,
+                mime: r.get(2)?,
+                cas_ref: r.get(3)?,
+                wrapped_file_key: r.get(4)?,
+                is_video: r.get::<_, i64>(5)? != 0,
+                is_raw: r.get::<_, i64>(6)? != 0,
+                is_screenshot: r.get::<_, i64>(7)? != 0,
+                is_live: r.get::<_, i64>(8)? != 0,
+                source_id: r.get(9)?,
+                device_ct: r.get(10)?,
+                lens_ct: r.get(11)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Lookup timeline rows by asset id, preserving caller order.
+pub fn list_timeline_by_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<TimelineEntry>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        r"SELECT id, taken_at_utc_day, mime, cas_ref, is_video, is_live, wrapped_file_key
+          FROM asset WHERE id IN ({placeholders})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params: Vec<rusqlite::types::Value> = ids.iter().map(|&i| i.into()).collect();
+    let mut by_id: std::collections::HashMap<i64, TimelineEntry> = stmt
+        .query_map(rusqlite::params_from_iter(params), |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                TimelineEntry {
+                    id: r.get(0)?,
+                    taken_at_utc_day: r.get(1)?,
+                    mime: r.get(2)?,
+                    cas_ref: r.get(3)?,
+                    is_video: r.get::<_, i64>(4)? != 0,
+                    is_live: r.get::<_, i64>(5)? != 0,
+                    wrapped_file_key: r.get(6)?,
+                },
+            ))
+        })?
+        .collect::<rusqlite::Result<std::collections::HashMap<_, _>>>()?;
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(e) = by_id.remove(id) {
+            out.push(e);
+        }
+    }
+    Ok(out)
+}
+
+// --------- GEO POINTS (map view) ----------------------------------------------
+
+/// Plaintext geo points — decrypted by the caller from `gps_ct` since gps is
+/// sealed. This helper returns the raw asset + encrypted gps for the caller
+/// to decrypt in-memory.
+pub fn list_assets_with_gps(
+    conn: &Connection,
+    f: &AssetFilter,
+) -> Result<Vec<(i64, Vec<u8>, Option<i64>)>> {
+    let mut sql = String::from(
+        r"SELECT id, gps_ct, taken_at_utc_day
+          FROM asset WHERE gps_ct IS NOT NULL",
+    );
+    let mut args: Vec<rusqlite::types::Value> = Vec::new();
+    if let Some(v) = f.after_day {
+        sql.push_str(" AND taken_at_utc_day >= ?");
+        args.push(v.into());
+    }
+    if let Some(v) = f.before_day {
+        sql.push_str(" AND taken_at_utc_day <= ?");
+        args.push(v.into());
+    }
+    if let Some(v) = f.source_id {
+        sql.push_str(" AND source_id = ?");
+        args.push(v.into());
+    }
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(args), |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 // =========== TESTS ============================================================
 
 #[cfg(test)]
@@ -766,6 +1357,224 @@ mod tests {
         upsert_collection_key(&conn, cid, uid, "master", b"updated").unwrap();
         let k2 = get_collection_key(&conn, cid, uid, "master").unwrap();
         assert_eq!(k2.as_deref(), Some(b"updated".as_slice()));
+    }
+
+    #[test]
+    fn phash_upsert_get_list() {
+        let conn = open_mem();
+        let (_uid, sid) = seed_user_and_source(&conn);
+        let hash = [9u8; 32];
+        let a = AssetInsert {
+            blake3_plaintext: &hash,
+            mime: "image/jpeg",
+            bytes: 0,
+            width: None,
+            height: None,
+            duration_ms: None,
+            taken_at_utc_day: None,
+            is_video: false,
+            is_raw: false,
+            is_screenshot: false,
+            is_live: false,
+            is_motion: false,
+            source_id: sid,
+            cas_ref: "x",
+            imported_at: 0,
+            filename_ct: b"f",
+            taken_at_utc_ct: None,
+            gps_ct: None,
+            device_ct: None,
+            lens_ct: None,
+            exif_all_ct: None,
+            wrapped_file_key: b"w",
+        };
+        let id = match insert_asset_if_new(&conn, &a).unwrap() {
+            InsertResult::Inserted(x) | InsertResult::Existing(x) => x,
+        };
+        upsert_phash(&conn, id, 0xDEADBEEF_CAFEBABE).unwrap();
+        assert_eq!(get_phash(&conn, id).unwrap(), Some(0xDEADBEEF_CAFEBABE));
+        upsert_phash(&conn, id, 0x1234_5678_9ABC_DEF0).unwrap();
+        assert_eq!(get_phash(&conn, id).unwrap(), Some(0x1234_5678_9ABC_DEF0));
+        let list = list_phashes(&conn).unwrap();
+        assert_eq!(list, vec![(id, 0x1234_5678_9ABC_DEF0)]);
+    }
+
+    #[test]
+    fn ml_job_enqueue_claim_finish() {
+        let conn = open_mem();
+        let (_uid, _sid) = seed_user_and_source(&conn);
+        let id1 = enqueue_ml_job(&conn, "rebuild_person_clusters", None, 1000).unwrap();
+        let id2 = enqueue_ml_job(&conn, "rebuild_person_clusters", None, 1001).unwrap();
+        assert_eq!(id1, id2, "duplicate enqueue collapses");
+
+        let claim = claim_next_ml_job(&conn, 2000).unwrap().unwrap();
+        assert_eq!(claim.kind, "rebuild_person_clusters");
+        assert_eq!(claim.asset_id, None);
+        let none = claim_next_ml_job(&conn, 2001).unwrap();
+        assert!(none.is_none(), "no pending jobs left");
+
+        finish_ml_job(&conn, claim.id, 3000).unwrap();
+        let counts = count_ml_jobs_by_state(&conn).unwrap();
+        assert!(counts.iter().any(|(s, n)| s == "done" && *n == 1));
+    }
+
+    #[test]
+    fn asset_vec_roundtrip_and_filter() {
+        let conn = open_mem();
+        let (_uid, sid) = seed_user_and_source(&conn);
+        let mut ids = Vec::new();
+        for i in 0..3 {
+            let mut hash = [0u8; 32];
+            hash[0] = i as u8;
+            hash[1] = 0xA5;
+            let a = AssetInsert {
+                blake3_plaintext: &hash,
+                mime: "image/jpeg",
+                bytes: 0,
+                width: None,
+                height: None,
+                duration_ms: None,
+                taken_at_utc_day: Some(100 + i),
+                is_video: false,
+                is_raw: false,
+                is_screenshot: false,
+                is_live: false,
+                is_motion: false,
+                source_id: sid,
+                cas_ref: "x",
+                imported_at: 0,
+                filename_ct: b"f",
+                taken_at_utc_ct: None,
+                gps_ct: None,
+                device_ct: None,
+                lens_ct: None,
+                exif_all_ct: None,
+                wrapped_file_key: b"w",
+            };
+            let id = match insert_asset_if_new(&conn, &a).unwrap() {
+                InsertResult::Inserted(x) | InsertResult::Existing(x) => x,
+            };
+            upsert_asset_vec(&conn, id, &[i as f32, 0.5, -1.0]).unwrap();
+            ids.push(id);
+        }
+        let vecs = list_asset_vecs(&conn).unwrap();
+        assert_eq!(vecs.len(), 3);
+        let got = get_asset_vec(&conn, ids[1]).unwrap().unwrap();
+        assert!((got[0] - 1.0).abs() < 1e-6);
+
+        let all = filter_assets(
+            &conn,
+            &AssetFilter {
+                after_day: Some(101),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn person_crud_cascades_faces() {
+        let conn = open_mem();
+        let (uid, sid) = seed_user_and_source(&conn);
+        // seed one asset
+        let a = AssetInsert {
+            blake3_plaintext: &[3u8; 32],
+            mime: "image/jpeg",
+            bytes: 0,
+            width: None,
+            height: None,
+            duration_ms: None,
+            taken_at_utc_day: None,
+            is_video: false,
+            is_raw: false,
+            is_screenshot: false,
+            is_live: false,
+            is_motion: false,
+            source_id: sid,
+            cas_ref: "x",
+            imported_at: 0,
+            filename_ct: b"f",
+            taken_at_utc_ct: None,
+            gps_ct: None,
+            device_ct: None,
+            lens_ct: None,
+            exif_all_ct: None,
+            wrapped_file_key: b"w",
+        };
+        let aid = match insert_asset_if_new(&conn, &a).unwrap() {
+            InsertResult::Inserted(x) | InsertResult::Existing(x) => x,
+        };
+        let f1 = insert_face(&conn, aid, 0.9, b"bbox1", b"emb1").unwrap();
+        let f2 = insert_face(&conn, aid, 0.8, b"bbox2", b"emb2").unwrap();
+        let p1 = insert_person(&conn, uid, None).unwrap();
+        let p2 = insert_person(&conn, uid, None).unwrap();
+        reassign_faces_to_person(&conn, &[f1], Some(p1)).unwrap();
+        reassign_faces_to_person(&conn, &[f2], Some(p2)).unwrap();
+        merge_persons(&conn, p2, p1).unwrap();
+        let faces = list_faces_for_person(&conn, p1).unwrap();
+        assert_eq!(faces.len(), 2);
+
+        set_person_name(&conn, p1, b"alice").unwrap();
+        set_person_hidden(&conn, p1, true).unwrap();
+        let all = list_persons(&conn, uid, true).unwrap();
+        assert_eq!(all.len(), 1);
+        let visible = list_persons(&conn, uid, false).unwrap();
+        assert_eq!(visible.len(), 0);
+    }
+
+    #[test]
+    fn nd_cluster_replace_and_list() {
+        let conn = open_mem();
+        let (_uid, sid) = seed_user_and_source(&conn);
+        for i in 0..2 {
+            let mut hash = [0u8; 32];
+            hash[0] = 0xB0;
+            hash[1] = i as u8;
+            let a = AssetInsert {
+                blake3_plaintext: &hash,
+                mime: "image/jpeg",
+                bytes: 0,
+                width: None,
+                height: None,
+                duration_ms: None,
+                taken_at_utc_day: None,
+                is_video: false,
+                is_raw: false,
+                is_screenshot: false,
+                is_live: false,
+                is_motion: false,
+                source_id: sid,
+                cas_ref: "x",
+                imported_at: 0,
+                filename_ct: b"f",
+                taken_at_utc_ct: None,
+                gps_ct: None,
+                device_ct: None,
+                lens_ct: None,
+                exif_all_ct: None,
+                wrapped_file_key: b"w",
+            };
+            insert_asset_if_new(&conn, &a).unwrap();
+        }
+        let members = vec![
+            NdClusterMember {
+                cluster_id: 0,
+                asset_id: 1,
+                is_best: true,
+            },
+            NdClusterMember {
+                cluster_id: 0,
+                asset_id: 2,
+                is_best: false,
+            },
+        ];
+        replace_nd_clusters(&conn, &members).unwrap();
+        let got = list_nd_clusters(&conn).unwrap();
+        assert_eq!(got.len(), 2);
+        assert!(got.iter().any(|m| m.is_best));
+        delete_nd_cluster(&conn, 0).unwrap();
+        assert!(list_nd_clusters(&conn).unwrap().is_empty());
     }
 
     #[test]

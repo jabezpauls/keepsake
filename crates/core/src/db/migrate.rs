@@ -1,15 +1,15 @@
 //! Additive migrations.
 //!
-//! Phase 1 is schema version 1. Future phases increment `user_version` and
-//! add new tables/indexes here. Existing columns are never changed — doing so
-//! requires a major migration release per `plans/architecture.md` §4.4.
+//! Phase 1 was schema version 1; Phase 2 is version 2. Existing columns are
+//! never changed — doing so requires a major migration release per
+//! `plans/architecture.md` §4.4.
 
 use rusqlite::Connection;
 
 use crate::Result;
 
 /// Target schema version shipped by this build.
-pub const CURRENT_VERSION: i32 = 1;
+pub const CURRENT_VERSION: i32 = 2;
 
 /// Apply any migrations needed to bring `conn` up to [`CURRENT_VERSION`].
 pub fn apply(conn: &Connection) -> Result<()> {
@@ -23,9 +23,14 @@ pub fn apply(conn: &Connection) -> Result<()> {
         return Err(crate::Error::Db(rusqlite::Error::ExecuteReturnedResults));
     }
 
-    // version == 0 → run initial DDL.
-    super::schema::init(conn)?;
-    conn.pragma_update(None, "user_version", CURRENT_VERSION)?;
+    if version < 1 {
+        super::schema::init(conn)?;
+        conn.pragma_update(None, "user_version", 1)?;
+    }
+    if version < 2 {
+        conn.execute_batch(super::schema::DDL_V2)?;
+        conn.pragma_update(None, "user_version", 2)?;
+    }
     Ok(())
 }
 
@@ -53,5 +58,33 @@ mod tests {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(v, CURRENT_VERSION);
+    }
+
+    #[test]
+    fn v1_to_v2_upgrade_creates_new_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        super::super::schema::init(&conn).unwrap();
+        conn.pragma_update(None, "user_version", 1_i32).unwrap();
+
+        apply(&conn).unwrap();
+        for t in ["ml_job", "nd_cluster", "asset_vec"] {
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [t],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 1, "missing table after upgrade: {t}");
+        }
+        // path_hash column exists on asset_location.
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(asset_location)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.iter().any(|c| c == "path_hash"));
     }
 }
