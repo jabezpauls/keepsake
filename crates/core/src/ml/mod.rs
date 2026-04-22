@@ -8,6 +8,7 @@
 //!
 //! `phash` is pure Rust with no model — it always builds.
 
+pub mod nearp;
 pub mod phash;
 
 // Model-backed modules (`clip`, `faces`, `runtime`) are added in Step 4 behind
