@@ -16,9 +16,7 @@ use crate::db;
 use crate::{Error, Result};
 
 use super::clip;
-use super::faces::{
-    self, cluster_centroids, dbscan_cosine, hungarian_reassign, ClusterId,
-};
+use super::faces::{self, cluster_centroids, dbscan_cosine, hungarian_reassign, ClusterId};
 use super::runtime::MlRuntime;
 
 /// Default DBSCAN cosine-distance threshold for face clustering
@@ -91,7 +89,8 @@ pub fn run_detect_faces(
         .ok_or_else(|| Error::Ingest(format!("no thumb for asset {asset_id}")))?;
 
     let bytes = cas.get(&thumb_ref, &fk)?;
-    let img = image::load_from_memory(&bytes).map_err(|e| Error::Media(format!("face decode: {e}")))?;
+    let img =
+        image::load_from_memory(&bytes).map_err(|e| Error::Media(format!("face decode: {e}")))?;
     let rgb = img.to_rgb8();
 
     let detections = faces::detect_faces(&rt.sessions.scrfd, &rgb)?;
@@ -172,7 +171,11 @@ pub fn run_rebuild_person_clusters(
 
     // Determine fresh-id allocation base (max existing person id + 1).
     let base_person_id = std::cmp::max(
-        old_centroids.iter().map(|(id, _, _)| *id).max().unwrap_or(-1),
+        old_centroids
+            .iter()
+            .map(|(id, _, _)| *id)
+            .max()
+            .unwrap_or(-1),
         db::list_persons(conn, /* owner_id */ 1, true)?
             .iter()
             .map(|p| p.id as ClusterId)

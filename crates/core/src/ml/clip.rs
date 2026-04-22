@@ -50,9 +50,15 @@ pub fn preprocess_image(img: &image::DynamicImage) -> Array4<f32> {
     // BICUBIC is close enough; Lanczos3 is a common Rust substitute used by
     // rust-clip and candle-transformers; embedding drift is well under 1%).
     let (nw, nh) = if w < h {
-        (CLIP_INPUT, (h as f32 * CLIP_INPUT as f32 / w as f32).round() as u32)
+        (
+            CLIP_INPUT,
+            (h as f32 * CLIP_INPUT as f32 / w as f32).round() as u32,
+        )
     } else {
-        ((w as f32 * CLIP_INPUT as f32 / h as f32).round() as u32, CLIP_INPUT)
+        (
+            (w as f32 * CLIP_INPUT as f32 / h as f32).round() as u32,
+            CLIP_INPUT,
+        )
     };
     let resized = img.resize_exact(nw, nh, FilterType::Lanczos3);
     let cx = (nw.saturating_sub(CLIP_INPUT)) / 2;
@@ -128,9 +134,9 @@ fn run_visual(session: &SharedSession, tensor: Array4<f32>) -> Result<Vec<f32>> 
     // (token sequence) — reject those with a specific shape error; if we ever
     // ship a model like that we'll need an explicit pooling step here.
     let dims = shape.as_ref();
-    let last = *dims.last().ok_or(Error::MlModelShape(
-        "clip_visual.onnx: empty output shape",
-    ))?;
+    let last = *dims
+        .last()
+        .ok_or(Error::MlModelShape("clip_visual.onnx: empty output shape"))?;
     if last != CLIP_DIM as i64 {
         return Err(Error::MlModelShape(
             "clip_visual.onnx: last-dim != 768, unexpected export",
@@ -182,13 +188,11 @@ pub fn embed_text(
         .try_extract_tensor::<f32>()
         .map_err(|e| Error::Media(format!("clip text extract: {e}")))?;
     let dims = shape.as_ref();
-    let last = *dims.last().ok_or(Error::MlModelShape(
-        "clip_textual.onnx: empty output shape",
-    ))?;
+    let last = *dims
+        .last()
+        .ok_or(Error::MlModelShape("clip_textual.onnx: empty output shape"))?;
     if last != CLIP_DIM as i64 {
-        return Err(Error::MlModelShape(
-            "clip_textual.onnx: last-dim != 768",
-        ));
+        return Err(Error::MlModelShape("clip_textual.onnx: last-dim != 768"));
     }
     if data.len() != CLIP_DIM {
         return Err(Error::MlModelShape(

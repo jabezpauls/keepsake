@@ -404,8 +404,8 @@ pub fn scrfd_preprocess(img: &image::RgbImage) -> (Array4<f32>, f32, f32, f32) {
 pub fn detect_faces(session: &SharedSession, img: &image::RgbImage) -> Result<Vec<FaceDetection>> {
     let (tensor, scale, pad_x, pad_y) = scrfd_preprocess(img);
     let view = tensor.view();
-    let input = TensorRef::from_array_view(view)
-        .map_err(|e| Error::Media(format!("scrfd input: {e}")))?;
+    let input =
+        TensorRef::from_array_view(view).map_err(|e| Error::Media(format!("scrfd input: {e}")))?;
     let mut sess = session
         .lock()
         .map_err(|_| Error::Ingest("scrfd session mutex poisoned".into()))?;
@@ -480,9 +480,10 @@ pub fn embed_face(
     let (shape, data) = first
         .try_extract_tensor::<f32>()
         .map_err(|e| Error::Media(format!("arcface extract: {e}")))?;
-    let last = *shape.as_ref().last().ok_or(Error::MlModelShape(
-        "arcface.onnx: empty output shape",
-    ))?;
+    let last = *shape
+        .as_ref()
+        .last()
+        .ok_or(Error::MlModelShape("arcface.onnx: empty output shape"))?;
     if last != ARCFACE_DIM as i64 || data.len() != ARCFACE_DIM {
         return Err(Error::MlModelShape(
             "arcface.onnx: expected 512-d pooled output",
@@ -542,7 +543,9 @@ pub fn dbscan_cosine(vectors: &[Vec<f32>], eps: f32, min_samples: usize) -> Vec<
     let distance = |i: usize, j: usize| -> f32 { 1.0 - cosine(&vectors[i], &vectors[j]) };
 
     let region_query = |i: usize| -> Vec<usize> {
-        (0..n).filter(|&j| j != i && distance(i, j) <= eps).collect()
+        (0..n)
+            .filter(|&j| j != i && distance(i, j) <= eps)
+            .collect()
     };
 
     for i in 0..n {
@@ -577,7 +580,10 @@ pub fn dbscan_cosine(vectors: &[Vec<f32>], eps: f32, min_samples: usize) -> Vec<
 
 /// Compute the mean vector of each cluster. Returns a map from cluster_id to
 /// (centroid, member count). Ignores `-1` (noise).
-pub fn cluster_centroids(vectors: &[Vec<f32>], labels: &[ClusterId]) -> Vec<(ClusterId, Vec<f32>, usize)> {
+pub fn cluster_centroids(
+    vectors: &[Vec<f32>],
+    labels: &[ClusterId],
+) -> Vec<(ClusterId, Vec<f32>, usize)> {
     debug_assert_eq!(vectors.len(), labels.len());
     use std::collections::BTreeMap;
     let mut acc: BTreeMap<ClusterId, (Vec<f32>, usize)> = BTreeMap::new();
@@ -648,7 +654,11 @@ pub fn hungarian_reassign(
     // `assignment[i] = j` means new_centroids[i] → old_centroids[j] if in range
     // and above similarity threshold; otherwise unmatched.
     let mut used_old: HashSet<ClusterId> = HashSet::new();
-    let mut max_old_id: ClusterId = old_centroids.iter().map(|(id, _, _)| *id).max().unwrap_or(-1);
+    let mut max_old_id: ClusterId = old_centroids
+        .iter()
+        .map(|(id, _, _)| *id)
+        .max()
+        .unwrap_or(-1);
     for (i, j) in assignment.iter().enumerate() {
         if i >= n_new {
             break;
@@ -836,11 +846,8 @@ mod tests {
     fn align_face_with_template_landmarks_is_near_identity_crop() {
         // Synthesise a 112×112 image whose "landmarks" already sit at the
         // template. Alignment should return effectively the same image.
-        let mut img = image::RgbImage::from_pixel(
-            ARCFACE_INPUT,
-            ARCFACE_INPUT,
-            image::Rgb([40, 80, 160]),
-        );
+        let mut img =
+            image::RgbImage::from_pixel(ARCFACE_INPUT, ARCFACE_INPUT, image::Rgb([40, 80, 160]));
         // Mark each template position with a distinctive pixel.
         for (x, y) in &ARCFACE_TEMPLATE {
             img.put_pixel(*x as u32, *y as u32, image::Rgb([255, 0, 0]));
@@ -941,7 +948,10 @@ mod tests {
         let map = hungarian_reassign(&new, &old, 0.55);
         assert_eq!(map.get(&0), Some(&10));
         let assigned = *map.get(&1).expect("second cluster gets an id");
-        assert!(assigned > 10, "fresh id should be past old-max, got {assigned}");
+        assert!(
+            assigned > 10,
+            "fresh id should be past old-max, got {assigned}"
+        );
     }
 
     #[test]
@@ -962,11 +972,8 @@ mod tests {
 
     #[test]
     fn arcface_preprocess_shape_and_normalisation() {
-        let img = image::RgbImage::from_pixel(
-            ARCFACE_INPUT,
-            ARCFACE_INPUT,
-            image::Rgb([255, 127, 0]),
-        );
+        let img =
+            image::RgbImage::from_pixel(ARCFACE_INPUT, ARCFACE_INPUT, image::Rgb([255, 127, 0]));
         let t = arcface_preprocess(&img);
         assert_eq!(t.shape(), &[1, 3, 112, 112]);
         // BGR order: channel 0 = B = 0, channel 1 = G = 127, channel 2 = R = 255.

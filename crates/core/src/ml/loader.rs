@@ -14,7 +14,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use ort::execution_providers::{
-    CPUExecutionProvider, CoreMLExecutionProvider, CUDAExecutionProvider, ExecutionProviderDispatch,
+    CPUExecutionProvider, CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProviderDispatch,
 };
 use ort::session::Session;
 
