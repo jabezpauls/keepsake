@@ -17,6 +17,7 @@ use chrono::{DateTime, Utc};
 
 use crate::crypto::{open_row, CollectionKey};
 use crate::db::{self, AssetFilter, AssetLite};
+use crate::ml::MlRuntime;
 use crate::Result;
 
 /// What the UI is asking for.
@@ -45,14 +46,19 @@ pub struct SearchHit {
     pub score: Option<f32>,
 }
 
-/// Execute a search. `ck` is the currently-unlocked default collection key
-/// (needed to decrypt `device_ct` / `lens_ct` for string filters). Pass `None`
-/// if those filters aren't in the query — a None key with a string filter
-/// returns an empty result rather than panicking.
+/// Execute a search.
+///
+/// * `ck` — unlocked default collection key, required when the query uses
+///   decrypt-filters (`camera_make` / `lens`); otherwise `None` is fine.
+/// * `runtime` — live ML runtime, required only for CLIP text re-ranking.
+///   With `None` or with the `ml-models` feature off, a `text` query falls
+///   back to date-ordered metadata results (other filters still apply) so
+///   the search surface stays usable.
 pub fn search(
     conn: &rusqlite::Connection,
     q: &SearchQuery,
     ck: Option<&CollectionKey>,
+    runtime: Option<&MlRuntime>,
 ) -> Result<Vec<SearchHit>> {
     // 1. Plaintext filters → candidate set.
     let limit_hint = q.limit.saturating_mul(4).max(50);
@@ -104,9 +110,9 @@ pub fn search(
         candidates.retain(|a| string_matches(a, key, q));
     }
 
-    // 5. CLIP text scoring (feature-gated). Without the flag we fall back to
-    //    date-ordered results, which is still useful.
-    let hits = maybe_clip_rerank(conn, &candidates, q)?;
+    // 5. CLIP text scoring (feature-gated + runtime-gated). Without either,
+    //    we fall back to date-ordered results.
+    let hits = maybe_clip_rerank(conn, &candidates, q, runtime)?;
 
     Ok(hits.into_iter().take(q.limit as usize).collect())
 }
@@ -143,13 +149,65 @@ fn string_matches(a: &AssetLite, key: &CollectionKey, q: &SearchQuery) -> bool {
     true
 }
 
-/// CLIP text re-ranking — stub. Wired up in Step 4 once `MlRuntime` lands.
-/// Without the `ml-models` feature flag, text queries silently fall back to
-/// date-ordered results so the search UI keeps working on model-less builds.
+/// CLIP text re-ranking. When `runtime` is `Some` and `q.text` is set, embed
+/// the query text once and cosine-score each candidate against its cached
+/// `asset_vec` entry. Candidates without a vector (e.g. not-yet-embedded)
+/// get the baseline score of `None` and sort below scored hits. Without a
+/// runtime or text, falls through to the existing date-ordered behaviour so
+/// the UI keeps working on model-less builds.
+#[cfg(feature = "ml-models")]
+fn maybe_clip_rerank(
+    conn: &rusqlite::Connection,
+    candidates: &[AssetLite],
+    q: &SearchQuery,
+    runtime: Option<&MlRuntime>,
+) -> Result<Vec<SearchHit>> {
+    let (Some(rt), Some(text)) = (runtime, q.text.as_deref()) else {
+        return Ok(candidates
+            .iter()
+            .map(|a| SearchHit {
+                asset_id: a.id,
+                score: None,
+            })
+            .collect());
+    };
+    if text.is_empty() {
+        return Ok(candidates
+            .iter()
+            .map(|a| SearchHit {
+                asset_id: a.id,
+                score: None,
+            })
+            .collect());
+    }
+
+    let query_vec = crate::ml::clip::embed_text(&rt.sessions.clip_textual, &rt.tokenizer, text)?;
+    let asset_vecs = db::list_asset_vecs(conn)?;
+    let by_id: std::collections::HashMap<i64, Vec<f32>> = asset_vecs.into_iter().collect();
+
+    let mut hits: Vec<SearchHit> = candidates
+        .iter()
+        .map(|a| SearchHit {
+            asset_id: a.id,
+            score: by_id.get(&a.id).map(|v| cosine_dot(&query_vec, v)),
+        })
+        .collect();
+    // Sort: scored (desc) first, unscored after in candidate order.
+    hits.sort_by(|a, b| match (a.score, b.score) {
+        (Some(x), Some(y)) => y.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    Ok(hits)
+}
+
+#[cfg(not(feature = "ml-models"))]
 fn maybe_clip_rerank(
     _conn: &rusqlite::Connection,
     candidates: &[AssetLite],
     _q: &SearchQuery,
+    _runtime: Option<&MlRuntime>,
 ) -> Result<Vec<SearchHit>> {
     Ok(candidates
         .iter()
@@ -158,6 +216,21 @@ fn maybe_clip_rerank(
             score: None,
         })
         .collect())
+}
+
+/// Cosine similarity between unit-normalised vectors reduces to a dot
+/// product. Both CLIP's embed_text and embed_image_bytes return unit-norm,
+/// and asset_vec stores what embed_image_bytes emitted, so this is safe.
+#[cfg(feature = "ml-models")]
+fn cosine_dot(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() {
+        return 0.0;
+    }
+    let mut s = 0.0f32;
+    for (x, y) in a.iter().zip(b.iter()) {
+        s += x * y;
+    }
+    s
 }
 
 // =========== TESTS ============================================================
@@ -236,7 +309,7 @@ mod tests {
             limit: 50,
             ..Default::default()
         };
-        let hits = search(&conn, &q, None).unwrap();
+        let hits = search(&conn, &q, None, None).unwrap();
         assert_eq!(hits.len(), 1);
     }
 
@@ -256,7 +329,7 @@ mod tests {
             limit: 50,
             ..Default::default()
         };
-        let hits = search(&conn, &q, Some(&ck)).unwrap();
+        let hits = search(&conn, &q, Some(&ck), None).unwrap();
         assert_eq!(hits.len(), 1);
 
         let q_sony = SearchQuery {
@@ -264,7 +337,7 @@ mod tests {
             limit: 50,
             ..Default::default()
         };
-        let hits = search(&conn, &q_sony, Some(&ck)).unwrap();
+        let hits = search(&conn, &q_sony, Some(&ck), None).unwrap();
         assert_eq!(hits.len(), 1);
     }
 
@@ -280,7 +353,7 @@ mod tests {
             limit: 50,
             ..Default::default()
         };
-        let hits = search(&conn, &q, None).unwrap();
+        let hits = search(&conn, &q, None, None).unwrap();
         // Without ml-models, all hits are returned unscored in date-desc order.
         assert_eq!(hits.len(), 2);
         assert!(hits.iter().all(|h| h.score.is_none()));

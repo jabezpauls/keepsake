@@ -41,6 +41,10 @@ impl From<CoreError> for AppError {
             CoreError::Locked => Self::Locked,
             CoreError::RateLimited => Self::BadRequest("rate limited".into()),
             CoreError::ModelsUnavailable => Self::BadRequest("models unavailable".into()),
+            CoreError::MlModelChecksum(name) => {
+                Self::BadRequest(format!("model {name} checksum mismatch"))
+            }
+            CoreError::MlModelShape(msg) => Self::BadRequest(format!("model shape: {msg}")),
         }
     }
 }

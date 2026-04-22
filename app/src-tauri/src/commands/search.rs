@@ -51,7 +51,10 @@ async fn search_assets_impl(state: &AppState, req: SearchRequest) -> AppResult<V
             lens: req.lens,
             limit: req.limit.clamp(1, 500),
         };
-        let hits = search::search(&guard, &q, Some(&ck))?;
+        // Runtime handle is plumbed in C11 once the app spawns MlWorker at
+        // unlock; until then searches run without CLIP re-rank (the other
+        // filters still apply, matching the off-flag path).
+        let hits = search::search(&guard, &q, Some(&ck), None)?;
         let ids: Vec<i64> = hits.iter().map(|h| h.asset_id).collect();
         let rows = db::list_timeline_by_ids(&guard, &ids)?;
         let scores: std::collections::HashMap<i64, Option<f32>> =
