@@ -262,7 +262,16 @@ pub struct NearDupMember {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
 pub struct MlStatus {
+    /// `true` when the app was built with `--features ml-models`. Says nothing
+    /// about whether weights are actually loaded — see `runtime_loaded`.
     pub models_available: bool,
+    /// `true` when the on-device ML runtime has loaded (weights + tokenizer
+    /// live in memory, ort sessions ready). Implies `models_available`.
+    pub runtime_loaded: bool,
+    /// Human-readable execution provider the runtime picked ("Cpu", "Cuda",
+    /// "CoreMl", or "disabled" when `runtime_loaded=false`). Shown in the
+    /// banner so users can verify where inference is actually running.
+    pub execution_provider: String,
     #[ts(type = "number")]
     pub pending: i64,
     #[ts(type = "number")]

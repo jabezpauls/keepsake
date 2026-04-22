@@ -19,6 +19,7 @@ use std::sync::Arc;
 use mv_core::cas::CasStore;
 use mv_core::crypto::keystore::{UnlockedUser, UserRecord};
 use mv_core::crypto::CollectionKey;
+use mv_core::ml::{MlRuntime, MlWorker};
 use tokio::sync::Mutex;
 
 use crate::dto::IngestStatus;
@@ -47,6 +48,13 @@ pub struct Session {
     pub hidden_unlocked: bool,
     /// In-memory view of ingest progress, keyed by source_id.
     pub ingests: Arc<Mutex<HashMap<i64, IngestStatus>>>,
+    /// Background ML worker — always present so `ml_status` can report queue
+    /// counts even with weights missing. Runtime is lazy-loaded.
+    pub ml_worker: MlWorker,
+    /// Loaded ML runtime. `None` until `try_load_models` succeeds (off-flag
+    /// or missing weights keep this `None`; search + worker fall back to
+    /// their metadata-only paths).
+    pub ml_runtime: std::sync::Mutex<Option<Arc<MlRuntime>>>,
 }
 
 impl AppState {

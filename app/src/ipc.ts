@@ -132,6 +132,7 @@ export const api = {
 
     // --- ml -------------------------------------------------------------
     mlStatus: () => invoke<MlStatus>("ml_status"),
+    mlModelsEnabled: () => invoke<boolean>("ml_models_enabled"),
 };
 
 /// Decode a byte-array returned by `assetThumbnail` / `assetOriginal` into a

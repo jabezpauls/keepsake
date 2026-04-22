@@ -83,8 +83,10 @@ async fn create_user_impl(
 
         let cas = Arc::new(CasStore::open(&root)?);
         let user = Arc::new(unlocked);
+        let db_arc = Arc::new(tokio::sync::Mutex::new(conn));
+        let ml_worker = mv_core::ml::MlWorker::new(db_arc.clone(), cas.clone());
         Ok(Session {
-            db: Arc::new(tokio::sync::Mutex::new(conn)),
+            db: db_arc,
             cas,
             user,
             user_record: record,
@@ -94,6 +96,8 @@ async fn create_user_impl(
             unlocked_albums: std::collections::HashMap::new(),
             hidden_unlocked: false,
             ingests: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            ml_worker,
+            ml_runtime: std::sync::Mutex::new(None),
         })
     })
     .await
@@ -105,6 +109,7 @@ async fn create_user_impl(
         default_collection_id: session.default_collection_id,
         hidden_unlocked: false,
     };
+    crate::commands::ml::try_bootstrap_runtime(&session, &state.vault_root);
     *state.inner.lock().await = Inner {
         session: Some(session),
     };
@@ -164,8 +169,10 @@ async fn unlock_impl(
         let ck = mv_core::crypto::unwrap_collection_key(&wrapped, &unlocked.master_key)?;
 
         let cas = Arc::new(CasStore::open(&root)?);
+        let db_arc = Arc::new(tokio::sync::Mutex::new(conn));
+        let ml_worker = mv_core::ml::MlWorker::new(db_arc.clone(), cas.clone());
         Ok(Session {
-            db: Arc::new(tokio::sync::Mutex::new(conn)),
+            db: db_arc,
             cas,
             user: Arc::new(unlocked),
             user_record: record,
@@ -175,6 +182,8 @@ async fn unlock_impl(
             unlocked_albums: std::collections::HashMap::new(),
             hidden_unlocked: false,
             ingests: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            ml_worker,
+            ml_runtime: std::sync::Mutex::new(None),
         })
     })
     .await
@@ -186,6 +195,7 @@ async fn unlock_impl(
         default_collection_id: session.default_collection_id,
         hidden_unlocked: false,
     };
+    crate::commands::ml::try_bootstrap_runtime(&session, &state.vault_root);
     *state.inner.lock().await = Inner {
         session: Some(session),
     };

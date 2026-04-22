@@ -145,6 +145,31 @@ p.error {
     border-radius: 4px;
 }
 
+.top-nav .ml-badge {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: default;
+    user-select: none;
+}
+.top-nav .ml-badge--off {
+    color: #888;
+    border-color: #444;
+}
+.top-nav .ml-badge--missing {
+    color: #c79a2f;
+    border-color: #c79a2f;
+}
+.top-nav .ml-badge--running {
+    color: #2fa86a;
+    border-color: #2fa86a;
+}
+.top-nav .ml-badge--idle {
+    color: #7a7a7a;
+    border-color: #555;
+}
+
 .view-host {
     flex: 1;
     overflow: hidden;

@@ -18,10 +18,11 @@ pub async fn search_assets(
 }
 
 async fn search_assets_impl(state: &AppState, req: SearchRequest) -> AppResult<Vec<SearchHitView>> {
-    let (db_handle, ck) = {
+    let (db_handle, ck, runtime) = {
         let guard = state.inner.lock().await;
         let s = guard.session.as_ref().ok_or(AppError::Locked)?;
-        (s.db.clone(), s.default_collection_key.clone())
+        let rt = s.ml_runtime.lock().unwrap().clone();
+        (s.db.clone(), s.default_collection_key.clone(), rt)
     };
 
     tokio::task::spawn_blocking(move || -> AppResult<Vec<SearchHitView>> {
@@ -51,10 +52,9 @@ async fn search_assets_impl(state: &AppState, req: SearchRequest) -> AppResult<V
             lens: req.lens,
             limit: req.limit.clamp(1, 500),
         };
-        // Runtime handle is plumbed in C11 once the app spawns MlWorker at
-        // unlock; until then searches run without CLIP re-rank (the other
-        // filters still apply, matching the off-flag path).
-        let hits = search::search(&guard, &q, Some(&ck), None)?;
+        // Runtime may be `None` (off-flag build or models not loaded yet).
+        // `search()` handles that case and falls back to date-ordered hits.
+        let hits = search::search(&guard, &q, Some(&ck), runtime.as_deref())?;
         let ids: Vec<i64> = hits.iter().map(|h| h.asset_id).collect();
         let rows = db::list_timeline_by_ids(&guard, &ids)?;
         let scores: std::collections::HashMap<i64, Option<f32>> =

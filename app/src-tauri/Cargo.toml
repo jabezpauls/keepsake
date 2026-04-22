@@ -41,3 +41,9 @@ rusqlite.workspace = true
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+# Phase 2.1 — forward on-device ML feature flags down to mv-core. The app
+# shell never talks to ort directly; all wiring lives in mv-core behind
+# these gates.
+ml-models = ["mv-core/ml-models"]
+ml-cuda = ["mv-core/ml-cuda"]
+ml-coreml = ["mv-core/ml-coreml"]

@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "../../state/session";
 import { api } from "../../ipc";
+import type { MlStatus } from "../../bindings/MlStatus";
 import Timeline from "../timeline/Timeline";
 import Sources from "../sources/Sources";
 import Albums from "../albums/Albums";
@@ -21,6 +22,26 @@ export default function Shell() {
         await api.lock();
         reset();
     };
+
+    // Poll ML status every 4s. Cheap: just hits the plaintext job-count query.
+    const [ml, setMl] = useState<MlStatus | null>(null);
+    useEffect(() => {
+        let alive = true;
+        const tick = async () => {
+            try {
+                const s = await api.mlStatus();
+                if (alive) setMl(s);
+            } catch {
+                // ignore — UI just keeps the last known state
+            }
+        };
+        tick();
+        const h = window.setInterval(tick, 4000);
+        return () => {
+            alive = false;
+            window.clearInterval(h);
+        };
+    }, []);
 
     // Keyboard shortcut: `/` focuses the search view.
     useEffect(() => {
@@ -62,6 +83,7 @@ export default function Shell() {
                 {navButton("sources", "Sources")}
                 <span className="spacer" />
                 {hiddenUnlocked && <span className="hidden-badge">hidden</span>}
+                {ml && <MlBadge status={ml} />}
                 <button onClick={lock}>Lock</button>
             </nav>
             <section className="view-host">
@@ -76,5 +98,44 @@ export default function Shell() {
                 {view.kind === "duplicates" && <Duplicates />}
             </section>
         </div>
+    );
+}
+
+function MlBadge({ status }: { status: MlStatus }) {
+    if (!status.models_available) {
+        return (
+            <span className="ml-badge ml-badge--off" title="Build without --features ml-models">
+                ML off
+            </span>
+        );
+    }
+    if (!status.runtime_loaded) {
+        return (
+            <span
+                className="ml-badge ml-badge--missing"
+                title="Models feature on, but weights not loaded. Run scripts/download_models.sh."
+            >
+                ML — no weights
+            </span>
+        );
+    }
+    const queued = status.pending + status.running;
+    if (queued > 0) {
+        return (
+            <span
+                className="ml-badge ml-badge--running"
+                title={`${status.pending} pending · ${status.running} running · ${status.done} done · ${status.failed} failed`}
+            >
+                ML {status.execution_provider} · {queued} queued
+            </span>
+        );
+    }
+    return (
+        <span
+            className="ml-badge ml-badge--idle"
+            title={`${status.done} done · ${status.failed} failed`}
+        >
+            ML {status.execution_provider} · idle
+        </span>
     );
 }
