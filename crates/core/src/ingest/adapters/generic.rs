@@ -221,6 +221,14 @@ fn ingest_one(
         source_id as u64,
         collection_key.as_bytes(),
     )?;
+    // Deterministic 16-byte BLAKE3 prefix of the absolute path — lets
+    // re-ingest of the same tree become a no-op at the asset_location layer.
+    // Leakage is bounded: the hash is keyed by the per-vault collection key,
+    // so without unlock it's indistinguishable from random.
+    let mut path_hasher = blake3::Hasher::new_keyed(&path_hash_key(collection_key));
+    path_hasher.update(path.to_string_lossy().as_bytes());
+    let path_hash_full = path_hasher.finalize();
+    let path_hash = path_hash_full.as_bytes()[..16].to_vec();
 
     let imported_at = Utc::now().timestamp();
     let taken_at_day = probe.taken_at_utc_day();
@@ -259,12 +267,26 @@ fn ingest_one(
         };
         match db::insert_asset_if_new(&guard, &insert)? {
             db::InsertResult::Inserted(id) => {
-                db::insert_asset_location(&guard, id, source_id, &original_path_ct, mtime)?;
+                db::insert_asset_location_deduped(
+                    &guard,
+                    id,
+                    source_id,
+                    &original_path_ct,
+                    &path_hash,
+                    mtime,
+                )?;
                 db::bump_source_stats(&guard, source_id, bytes as i64, 1)?;
                 Outcome::Inserted(id)
             }
             db::InsertResult::Existing(id) => {
-                db::insert_asset_location(&guard, id, source_id, &original_path_ct, mtime)?;
+                db::insert_asset_location_deduped(
+                    &guard,
+                    id,
+                    source_id,
+                    &original_path_ct,
+                    &path_hash,
+                    mtime,
+                )?;
                 Outcome::Existing(id)
             }
         }
@@ -277,6 +299,15 @@ fn ingest_one(
     //    for both the original and its derivatives.
     if let Outcome::Inserted(id) = asset_id {
         if let Ok(thumbs) = derive_thumbnails(path) {
+            // Use the 256px thumbnail (first in the list) for dhash — cheap
+            // to decode and stable across source-format differences. Falls
+            // back silently if the thumb isn't decodable (videos, etc.).
+            if let Some(first) = thumbs.first() {
+                if let Ok(Some(h)) = crate::ml::phash::dhash_bytes(&first.bytes) {
+                    let guard = db_mutex.blocking_lock();
+                    db::upsert_phash(&guard, id, h)?;
+                }
+            }
             for t in thumbs {
                 let (tref, _) = cas.put_streaming(std::io::Cursor::new(&t.bytes), &fk)?;
                 let guard = db_mutex.blocking_lock();
@@ -297,6 +328,13 @@ fn ingest_one(
 enum Outcome {
     Inserted(i64),
     Existing(i64),
+}
+
+fn path_hash_key(ck: &crate::crypto::CollectionKey) -> [u8; 32] {
+    // Pin the BLAKE3 MAC to the collection key so path_hash is vault-specific.
+    let mut out = [0u8; 32];
+    out.copy_from_slice(ck.as_bytes());
+    out
 }
 
 fn merge_exif(probe: &MediaProbe, sidecar: Option<&super::super::sidecar::XmpFields>) -> Vec<u8> {

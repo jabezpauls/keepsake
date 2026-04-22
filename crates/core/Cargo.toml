@@ -13,6 +13,14 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+# Phase 2: gated pieces that need ONNX model files.
+# Default OFF — users with models run `scripts/download_models.sh` and build
+# with `--features ml-models`. The rest of the pipeline (pHash, near-dup,
+# search metadata filters, face/person CRUD) works without the flag.
+default = []
+ml-models = []
+
 [dependencies]
 thiserror.workspace = true
 tracing.workspace = true

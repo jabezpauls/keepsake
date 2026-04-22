@@ -59,14 +59,18 @@ async fn iphone_dump_round_trip_and_dedupe() {
         .unwrap();
     assert_eq!(asset_count as u64, report.inserted);
 
-    // Every ingest pass appends a provenance row per (asset, source, path).
-    // Because the path ciphertext changes each pass (fresh nonce), Phase 1
-    // doesn't deduplicate at the location level — two passes yield ~2×
-    // rows. Location-level dedupe is a Phase-2 migration (adds a plaintext
-    // path_hash to key on). We only assert a *lower bound* here so later
-    // phases can tighten without regressing this test.
+    // Phase 2 adds a deterministic `path_hash` column + partial unique index
+    // so re-ingest of the same tree is idempotent at the location layer.
+    // Total location rows should equal the file count (content-dedupe assets
+    // can still own multiple locations, one per distinct path) — and crucially
+    // NOT grow on the second pass. Three MOV stubs share content → one asset
+    // but three locations, hence loc_count > asset_count by that exact delta.
     let loc_count: i64 = db
         .query_row("SELECT COUNT(*) FROM asset_location", [], |r| r.get(0))
         .unwrap();
-    assert!(loc_count >= asset_count);
+    assert_eq!(
+        loc_count,
+        (report.inserted + report.deduped) as i64,
+        "re-ingest must not grow asset_location"
+    );
 }
