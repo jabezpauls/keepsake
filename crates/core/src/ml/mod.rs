@@ -19,6 +19,9 @@ pub mod runtime;
 #[cfg(feature = "ml-models")]
 pub mod manifest;
 
+#[cfg(feature = "ml-models")]
+pub mod loader;
+
 pub use runtime::{ExecutionProvider, MlConfig, MlJobKind, MlRuntime, MlWorker};
 
 /// Compile-time flag: true when the `ml-models` feature is enabled. Callers

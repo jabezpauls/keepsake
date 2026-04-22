@@ -34,28 +34,40 @@ pub enum ExecutionProvider {
     CoreMl,
 }
 
-/// Placeholder — real runtime lives behind the `ml-models` feature flag.
-/// Today this struct just carries the config so callers can pass one around,
-/// and [`MlRuntime::load`] always returns `ModelsUnavailable` off-flag.
+/// Live runtime: sessions + config. On-flag, `load` walks the manifest and
+/// builds four ONNX sessions; off-flag, it always returns `ModelsUnavailable`.
 pub struct MlRuntime {
     #[allow(dead_code)]
     config: MlConfig,
+    #[cfg(feature = "ml-models")]
+    pub(crate) sessions: super::loader::Sessions,
 }
 
 impl MlRuntime {
     /// Load the runtime. Off-flag this is always `Err(ModelsUnavailable)`.
-    /// On-flag (not yet implemented): walks `model_dir`, validates sha256
-    /// checksums, and initialises ONNX sessions lazily.
+    /// On-flag: verifies each model's SHA-256 against `ml::manifest`, then
+    /// builds sessions with the preferred provider plus CPU fallback.
     #[cfg(feature = "ml-models")]
-    pub fn load(_config: MlConfig) -> Result<Self> {
-        // Step 4 ships only the scaffolding. Full ONNX wiring lands in a
-        // Phase-2.1 follow-up that's gated on model download.
-        Err(Error::ModelsUnavailable)
+    pub fn load(config: MlConfig) -> Result<Self> {
+        let sessions = super::loader::load_all(&config.model_dir, config.execution_provider)?;
+        Ok(Self { config, sessions })
     }
 
     #[cfg(not(feature = "ml-models"))]
     pub fn load(_config: MlConfig) -> Result<Self> {
         Err(Error::ModelsUnavailable)
+    }
+
+    /// Human-readable execution-provider label ("Auto" / "Cpu" / ...). Used by
+    /// the UI to render where inference is actually running.
+    #[cfg(feature = "ml-models")]
+    pub fn provider_label(&self) -> &str {
+        &self.sessions.provider_label
+    }
+
+    #[cfg(not(feature = "ml-models"))]
+    pub fn provider_label(&self) -> &str {
+        "disabled"
     }
 }
 
