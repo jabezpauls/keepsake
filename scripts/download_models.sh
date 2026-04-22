@@ -4,30 +4,46 @@
 # Usage: ./scripts/download_models.sh [DEST]
 # Default DEST is ./models/ relative to repo root.
 #
-# This script is intentionally idempotent and offline-safe: it re-runs without
-# re-downloading files that already match their expected checksum. Mismatched
-# files fail loudly.
+# ## BYO URLs
 #
-# After running, build with `--features ml-models` to enable CLIP + face
-# pipelines. Without this step or the feature flag, the app degrades to a
-# metadata-only search and skips face detection.
+# The Media Vault repo does not redistribute model weights. Instead, URLs
+# come from environment variables, and we pin only the SHA-256 of each
+# expected file here + in `crates/core/src/ml/manifest.rs`:
+#
+#   MV_MODEL_URL_CLIP_VISUAL     OpenCLIP ViT-L/14 visual ONNX export.
+#   MV_MODEL_URL_CLIP_TEXTUAL    OpenCLIP ViT-L/14 textual ONNX export.
+#   MV_MODEL_URL_CLIP_TOKENIZER  clip_tokenizer.json (HuggingFace format).
+#   MV_MODEL_URL_SCRFD           InsightFace scrfd_10g_bnkps.onnx.
+#   MV_MODEL_URL_ARCFACE         InsightFace ArcFace R100 ONNX.
+#
+# Paste the URLs you've sourced (e.g. from OpenCLIP / InsightFace release
+# pages) as env exports, then run this script. The SHA-256 below is the
+# ground truth; if a URL's file doesn't match, the download aborts.
+#
+# ## Updating a pin
+#
+# Replacing a weight requires three synchronised changes:
+#   1. Bump SHA-256 here.
+#   2. Bump SHA-256 in `crates/core/src/ml/manifest.rs`.
+#   3. Re-run Tier-B model-gated tests to confirm the new weight behaves.
+#
+# The placeholder checksum (64 zeroes) fails closed: any real file trips
+# `Error::MlModelChecksum` on load until the pin is updated intentionally.
 set -euo pipefail
 
 DEST="${1:-$(cd "$(dirname "$0")/.." && pwd)/models}"
 mkdir -p "$DEST"
 cd "$DEST"
 
-# Each entry: url|filename|sha256
-# Checksums are placeholders — replace when finalising sources. They are
-# required, not optional: CI refuses to download without them.
+# Each entry: env_var|filename|sha256
+# Keep in lock-step with the MODELS table in crates/core/src/ml/manifest.rs.
+PLACEHOLDER="0000000000000000000000000000000000000000000000000000000000000000"
 MODELS=(
-  # CLIP ViT-L/14 — OpenCLIP ONNX export. See https://github.com/mlfoundations/open_clip
-  # "https://example.invalid/clip-vit-l14-visual.onnx|clip_visual.onnx|PLACEHOLDER_SHA256"
-  # "https://example.invalid/clip-vit-l14-textual.onnx|clip_textual.onnx|PLACEHOLDER_SHA256"
-  # SCRFD 10G BNKPS — InsightFace detection model.
-  # "https://example.invalid/scrfd_10g_bnkps.onnx|scrfd.onnx|PLACEHOLDER_SHA256"
-  # ArcFace R100.
-  # "https://example.invalid/arcface_r100.onnx|arcface.onnx|PLACEHOLDER_SHA256"
+  "MV_MODEL_URL_CLIP_VISUAL|clip_visual.onnx|${PLACEHOLDER}"
+  "MV_MODEL_URL_CLIP_TEXTUAL|clip_textual.onnx|${PLACEHOLDER}"
+  "MV_MODEL_URL_CLIP_TOKENIZER|clip_tokenizer.json|${PLACEHOLDER}"
+  "MV_MODEL_URL_SCRFD|scrfd.onnx|${PLACEHOLDER}"
+  "MV_MODEL_URL_ARCFACE|arcface.onnx|${PLACEHOLDER}"
 )
 
 verify_sha() {
@@ -46,23 +62,10 @@ verify_sha() {
   fi
 }
 
-if [[ ${#MODELS[@]} -eq 0 ]]; then
-  cat >&2 <<'MSG'
-No model entries configured. To enable on-device ML:
-
-  1. Populate the MODELS array in scripts/download_models.sh with the
-     production URLs + SHA-256 checksums for each ONNX file.
-  2. Re-run this script.
-  3. Rebuild with `cargo build --features ml-models`.
-
-Until then, the app runs in "no-ML" mode: metadata search, pHash, near-dup,
-and all Phase-1 functionality still work.
-MSG
-  exit 0
-fi
-
+missing_urls=()
 for entry in "${MODELS[@]}"; do
-  IFS='|' read -r url name sha <<<"$entry"
+  IFS='|' read -r env_var name sha <<<"$entry"
+  url_value="${!env_var:-}"
   if [[ -f "$name" ]]; then
     if verify_sha "$name" "$sha" >/dev/null 2>&1; then
       echo "ok    $name"
@@ -71,10 +74,34 @@ for entry in "${MODELS[@]}"; do
     echo "stale $name (checksum mismatch); redownloading"
     rm -f "$name"
   fi
-  echo "get   $name"
-  curl -fSL "$url" -o "$name.tmp"
+  if [[ -z "$url_value" ]]; then
+    missing_urls+=("$env_var -> $name")
+    continue
+  fi
+  echo "get   $name (from \$$env_var)"
+  curl -fSL "$url_value" -o "$name.tmp"
   verify_sha "$name.tmp" "$sha"
   mv "$name.tmp" "$name"
 done
+
+if [[ "${#missing_urls[@]}" -gt 0 ]]; then
+  cat >&2 <<MSG
+
+Missing URLs for the following models:
+MSG
+  for item in "${missing_urls[@]}"; do
+    echo "  - $item" >&2
+  done
+  cat >&2 <<'MSG'
+
+Set the MV_MODEL_URL_* env vars (e.g. from OpenCLIP / InsightFace release
+pages) and re-run. The SHA-256 manifest in the script is the source of
+truth — the URL is only a delivery channel.
+
+Until every file is present, the app runs in no-ML mode: metadata search,
+pHash, near-dup, and all Phase-1 functionality still work.
+MSG
+  exit 1
+fi
 
 echo "models ready in $DEST"

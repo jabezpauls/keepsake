@@ -77,19 +77,47 @@ pnpm --filter app test:e2e                   # optional; installs browsers
   [`plans/phase-2-browsing.md`](./plans/phase-2-browsing.md) for the
   acceptance matrix and `SECURITY.md` for the updated leakage table.
 
-### Enabling ML
+### Enabling ML (Phase 2.1)
 
-Face detection and natural-language search require on-device ONNX
-models. To enable:
+Face detection, face clustering, and CLIP natural-language search run
+**entirely on-device** via ONNX Runtime. Nothing is uploaded. The
+pipeline activates when three things are true: the `ml-models` feature
+is on at build time, model weights are present on disk with matching
+SHA-256, and libonnxruntime is resolvable at runtime.
 
 ```bash
-# Populate scripts/download_models.sh with your production model
-# URLs + SHA-256 checksums, then:
-./scripts/download_models.sh
+# 1. Point the downloader at the weights you've sourced (OpenCLIP /
+#    InsightFace / your own mirror). URLs are intentionally not pinned
+#    by this repo — see scripts/download_models.sh for the list.
+export MV_MODEL_URL_CLIP_VISUAL=...
+export MV_MODEL_URL_CLIP_TEXTUAL=...
+export MV_MODEL_URL_CLIP_TOKENIZER=...
+export MV_MODEL_URL_SCRFD=...
+export MV_MODEL_URL_ARCFACE=...
+./scripts/download_models.sh ~/.local/share/media-vault/models
+
+# 2. Tell ort where libonnxruntime lives (installed via apt, brew, or
+#    the prebuilt bundles on https://github.com/microsoft/onnxruntime).
+export ORT_DYLIB_PATH=/usr/lib/x86_64-linux-gnu/libonnxruntime.so.1
+
+# 3. Optionally point MV_MODELS at a non-default model dir; the app
+#    otherwise looks in <vault>/models/.
+export MV_MODELS=~/.local/share/media-vault/models
+
+# 4. Build with the feature flag.
 cargo build --features ml-models
+# or, if you have a CUDA box: --features ml-cuda
+# or, if you're on macOS:     --features ml-coreml
 ```
+
+The SHA-256 pins in `scripts/download_models.sh` and
+`crates/core/src/ml/manifest.rs` are currently placeholder zeroes that
+fail closed. Updating them is a deliberate step — see
+`plans/wise-strolling-otter.md` for the three-way sync procedure.
 
 Without models, Media Vault still runs with everything that doesn't
 require inference — metadata search, pHash-based near-dup clustering,
 the full Phase-1 pipeline. The People tab will render empty and the
-"text" search field falls back to date-ordered results.
+"text" search field falls back to date-ordered results. The top-nav
+badge shows the current state at a glance ("ML off" / "ML — no
+weights" / "ML Cpu · idle" / "ML Cuda · 12 queued").
