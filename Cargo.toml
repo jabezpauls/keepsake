@@ -133,3 +133,14 @@ tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
 ndarray = "0.16"
 pathfinding = "4"
 sha2 = "0.10"
+
+# Phase 3.1 — peer networking. Pinned to the current stable iroh line; version
+# moves fast, so any bump comes with a 3.1.x follow-up. `iroh-base` is the
+# types-only dep used for NodeId / SecretKey without pulling the full endpoint.
+# `ed25519-dalek` is our signer for PairingTicket (architecture.md §6 requires
+# Ed25519 over the pre-sig bytes; iroh's own ticket format doesn't carry the
+# libsodium X25519 identity key, so we can't reuse it).
+iroh = "0.98"
+iroh-base = "0.98"
+ed25519-dalek = "2"
+rand = "0.8"

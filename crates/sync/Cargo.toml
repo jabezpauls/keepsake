@@ -16,3 +16,21 @@ workspace = true
 [dependencies]
 thiserror.workspace = true
 tracing.workspace = true
+tokio = { workspace = true }
+
+# Phase 3.1 peer networking.
+iroh.workspace = true
+iroh-base.workspace = true
+ed25519-dalek.workspace = true
+rand.workspace = true
+
+base32.workspace = true
+hex.workspace = true
+chrono.workspace = true
+rusqlite.workspace = true
+
+mv-core = { path = "../core" }
+
+[dev-dependencies]
+tempfile.workspace = true
+secrecy.workspace = true
