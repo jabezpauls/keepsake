@@ -45,6 +45,11 @@ impl From<CoreError> for AppError {
                 Self::BadRequest(format!("model {name} checksum mismatch"))
             }
             CoreError::MlModelShape(msg) => Self::BadRequest(format!("model shape: {msg}")),
+            CoreError::TicketFormat(hint) => {
+                Self::BadRequest(format!("pairing ticket format: {hint}"))
+            }
+            CoreError::TicketSignature => Self::Crypto,
+            CoreError::PeerUnreachable => Self::BadRequest("peer unreachable".into()),
         }
     }
 }

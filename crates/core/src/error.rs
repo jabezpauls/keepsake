@@ -75,6 +75,26 @@ pub enum Error {
     /// See `ml::manifest` for pinned expectations.
     #[error("model shape mismatch: {0}")]
     MlModelShape(&'static str),
+
+    /// A pairing-ticket byte layout doesn't match architecture.md §6 — too
+    /// short, wrong version byte, overlong relay_url, etc. String hint names
+    /// the exact mismatch so a operator staring at an imported ticket knows
+    /// whether to re-copy or re-generate.
+    #[error("pairing ticket format: {0}")]
+    TicketFormat(&'static str),
+
+    /// Pairing ticket parsed but its Ed25519 signature is invalid for the
+    /// claimed iroh_node_pub. Intentionally opaque — cannot distinguish
+    /// wrong-key from tampered-bytes, matching the Crypto / KeyOrData
+    /// convention in §1.
+    #[error("pairing ticket signature invalid")]
+    TicketSignature,
+
+    /// The remote peer couldn't be reached (network unreachable, relay
+    /// timeout, refused). Distinct from the crypto variants so the UI can
+    /// surface a retry prompt.
+    #[error("peer unreachable")]
+    PeerUnreachable,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
