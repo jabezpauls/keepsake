@@ -314,6 +314,11 @@ fn ingest_one(
                 db::insert_derivative(&guard, id, t.size.as_derivative_kind(), &tref)?;
             }
         }
+        // Queue the embed + face-detect ML jobs. Idempotent via dedupe on
+        // (kind, asset_id); the worker drains once the runtime is loaded.
+        let now = chrono::Utc::now().timestamp();
+        let guard = db_mutex.blocking_lock();
+        super::super::enqueue_post_ingest(&guard, id, now)?;
     }
 
     Ok(match asset_id {

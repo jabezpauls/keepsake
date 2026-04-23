@@ -1,8 +1,11 @@
 //! Ingest pipeline — scan + encrypt + store + provenance.
 
 pub mod adapters;
+pub mod enqueue;
 pub mod provenance;
 pub mod sidecar;
+
+pub use enqueue::enqueue_post_ingest;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

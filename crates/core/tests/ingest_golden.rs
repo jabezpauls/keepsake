@@ -73,4 +73,29 @@ async fn iphone_dump_round_trip_and_dedupe() {
         (report.inserted + report.deduped) as i64,
         "re-ingest must not grow asset_location"
     );
+
+    // Phase 2.2 invariant: every freshly-inserted asset must be queued for
+    // embed + face-detect. Re-ingest must NOT enqueue duplicates.
+    let embed_jobs: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM ml_job WHERE kind = 'embed_asset'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let detect_jobs: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM ml_job WHERE kind = 'detect_faces'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        embed_jobs, asset_count,
+        "one embed_asset job per distinct asset"
+    );
+    assert_eq!(
+        detect_jobs, asset_count,
+        "one detect_faces job per distinct asset"
+    );
 }
