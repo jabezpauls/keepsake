@@ -11,5 +11,6 @@ pub mod ingest;
 pub mod media;
 pub mod ml;
 pub mod search;
+pub mod share;
 
 pub use error::{Error, Result};
