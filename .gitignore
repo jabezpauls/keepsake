@@ -49,4 +49,6 @@ Thumbs.db
 # Playwright
 /playwright-report
 /test-results
+/app/playwright-report
+/app/test-results
 app/tsconfig.tsbuildinfo
