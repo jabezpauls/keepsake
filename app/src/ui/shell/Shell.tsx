@@ -10,6 +10,7 @@ import AssetDetail from "../timeline/AssetDetail";
 import Search from "../search/Search";
 import MapView from "../map/MapView";
 import People from "../people/People";
+import PersonDetail from "../people/PersonDetail";
 import Duplicates from "../duplicates/Duplicates";
 import Peers from "../peers/Peers";
 
@@ -94,10 +95,20 @@ export default function Shell() {
                 {view.kind === "sources" && <Sources />}
                 {view.kind === "albums" && <Albums />}
                 {view.kind === "album" && <AlbumDetail id={view.id} name={view.name} />}
-                {view.kind === "asset" && <AssetDetail id={view.id} back={view.back} />}
+                {view.kind === "asset" && (
+                    <AssetDetail
+                        id={view.id}
+                        back={view.back}
+                        neighbors={view.neighbors}
+                        index={view.index}
+                    />
+                )}
                 {view.kind === "search" && <Search />}
                 {view.kind === "map" && <MapView />}
                 {view.kind === "people" && <People />}
+                {view.kind === "person" && (
+                    <PersonDetail id={view.id} name={view.name} />
+                )}
                 {view.kind === "duplicates" && <Duplicates />}
                 {view.kind === "peers" && <Peers />}
             </section>
