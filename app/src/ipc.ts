@@ -15,6 +15,9 @@ export type { MlStatus } from "./bindings/MlStatus";
 export type { MlReindexReport } from "./bindings/MlReindexReport";
 export type { PairingTicketView } from "./bindings/PairingTicketView";
 export type { PeerAcceptedView } from "./bindings/PeerAcceptedView";
+export type { ShareInviteView } from "./bindings/ShareInviteView";
+export type { ShareRecipientView } from "./bindings/ShareRecipientView";
+export type { IncomingShareView } from "./bindings/IncomingShareView";
 export type { NearDupCluster } from "./bindings/NearDupCluster";
 export type { NearDupMember } from "./bindings/NearDupMember";
 export type { PersonView } from "./bindings/PersonView";
@@ -37,6 +40,9 @@ import type { MlStatus } from "./bindings/MlStatus";
 import type { MlReindexReport } from "./bindings/MlReindexReport";
 import type { PairingTicketView } from "./bindings/PairingTicketView";
 import type { PeerAcceptedView } from "./bindings/PeerAcceptedView";
+import type { ShareInviteView } from "./bindings/ShareInviteView";
+import type { ShareRecipientView } from "./bindings/ShareRecipientView";
+import type { IncomingShareView } from "./bindings/IncomingShareView";
 import type { NearDupCluster } from "./bindings/NearDupCluster";
 import type { PersonView } from "./bindings/PersonView";
 import type { SearchHitView } from "./bindings/SearchHitView";
@@ -154,6 +160,18 @@ export const api = {
     peerList: () => invoke<PeerAcceptedView[]>("peer_list"),
     peerForget: (nodeIdHex: string) =>
         invoke<boolean>("peer_forget", { nodeIdHex }),
+
+    // --- share (Phase 3.2) ---------------------------------------------
+    shareAlbumWithPeer: (albumId: number, peerNodeIdHex: string) =>
+        invoke<ShareInviteView>("share_album_with_peer", { albumId, peerNodeIdHex }),
+    listAlbumShares: (albumId: number) =>
+        invoke<ShareRecipientView[]>("list_album_shares", { albumId }),
+    revokeAlbumShare: (albumId: number, peerNodeIdHex: string) =>
+        invoke<null>("revoke_album_share", { albumId, peerNodeIdHex }),
+    listIncomingShares: () =>
+        invoke<IncomingShareView[]>("list_incoming_shares"),
+    acceptIncomingShare: (namespaceTicketBase32: string) =>
+        invoke<number>("accept_incoming_share", { namespaceTicketBase32 }),
 };
 
 /// Decode a byte-array returned by `assetThumbnail` / `assetOriginal` into a

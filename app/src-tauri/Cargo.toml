@@ -24,6 +24,8 @@ tauri-plugin-shell = "2"
 
 mv-core = { path = "../../crates/core" }
 mv-sync = { path = "../../crates/sync" }
+iroh-gossip.workspace = true
+iroh-blobs.workspace = true
 
 anyhow.workspace = true
 tracing.workspace = true

@@ -329,6 +329,50 @@ pub struct PeerAcceptedView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+pub struct ShareRecipientView {
+    /// Peer node id (Ed25519) in hex — matches what peer_list returns.
+    pub peer_node_id_hex: String,
+    /// Peer identity public key (X25519) in hex — the recipient's
+    /// seal/open handle.
+    pub peer_identity_pub_hex: String,
+    /// Iroh relay URL the recipient published (None for LAN-only).
+    pub relay_url: Option<String>,
+    /// UNIX seconds when the wrapping landed on the sender side. Not
+    /// when the recipient accepted it — the sender has no way to know
+    /// that without an explicit ack.
+    #[ts(type = "number")]
+    pub shared_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct IncomingShareView {
+    #[ts(type = "number")]
+    pub collection_id: i64,
+    pub namespace_id_hex: String,
+    pub sender_identity_pub_hex: String,
+    /// `"pending"` = namespace joined, no collection key yet.
+    /// `"accepted"` = key unwrapped + album rendered.
+    /// `"revoked"` = tombstone received.
+    pub state: String,
+    /// Populated once the first `c/meta/` event decrypts. Until then
+    /// the UI shows "(incoming share)".
+    pub album_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct ShareInviteView {
+    /// Base32-encoded iroh-docs `DocTicket`. Paste into the recipient's
+    /// "Accept invite" textarea to subscribe to the namespace.
+    pub namespace_ticket_base32: String,
+    #[ts(type = "number")]
+    pub collection_id: i64,
+    pub asset_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 pub struct MlReindexReport {
     /// Jobs newly inserted for CLIP embedding. Dedupes are excluded.
     #[ts(type = "number")]

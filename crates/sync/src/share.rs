@@ -24,6 +24,7 @@
 
 use std::sync::Arc;
 
+use iroh_docs::api::protocol::{AddrInfoOptions, ShareMode};
 use iroh_docs::api::Doc;
 use mv_core::crypto::envelope::{open_row, seal_row, wrap_collection_key};
 use mv_core::crypto::{CollectionKey, MasterKey};
@@ -354,6 +355,25 @@ pub async fn rotate_collection_key(ctx: &mut ShareContext, collection_id: i64) -
     // Swap the in-memory key so callers continue under the rotated key.
     ctx.collection_key_bytes = *new_ck.as_bytes();
     Ok(())
+}
+
+/// Generate a read-only `DocTicket` the recipient pastes into their
+/// "Accept invite" textarea to join the namespace. Returns its base32
+/// string form (the Display impl is the canonical serialisation).
+pub async fn generate_share_ticket(ctx: &ShareContext, collection_id: i64) -> Result<String> {
+    let ns = ctx
+        .docs
+        .open_shared(&ctx.conn, collection_id, "owner")
+        .await?;
+    let ticket = ns
+        .doc
+        .share(ShareMode::Read, AddrInfoOptions::RelayAndAddresses)
+        .await
+        .map_err(|e| {
+            tracing::debug!(%e, "doc.share failed");
+            Error::PeerUnreachable
+        })?;
+    Ok(ticket.to_string())
 }
 
 /// Thin adapter: write bytes to an iroh-docs key, mapping the library's

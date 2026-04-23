@@ -3983,6 +3983,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "hex",
+ "iroh-blobs",
+ "iroh-gossip",
  "mv-core",
  "mv-sync",
  "rusqlite",
@@ -4048,6 +4050,7 @@ name = "mv-sync"
 version = "0.1.0"
 dependencies = [
  "base32",
+ "bytes",
  "chrono",
  "ed25519-dalek 2.2.0",
  "futures",

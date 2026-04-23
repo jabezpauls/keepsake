@@ -60,6 +60,16 @@ pub struct Session {
     /// commands can await the slow endpoint bind without blocking the
     /// shared-state lock.
     pub peer: Mutex<Option<Arc<mv_sync::Peer>>>,
+    /// Phase 3.2 iroh-blobs bridge. Lazy-started alongside the docs
+    /// bridge on first share command.
+    pub blobs: Mutex<Option<Arc<mv_sync::BlobsBridge>>>,
+    /// Phase 3.2 iroh-docs bridge.
+    pub docs: Mutex<Option<Arc<mv_sync::DocsBridge>>>,
+    /// Gossip used by iroh-docs CRDT sync.
+    pub gossip: Mutex<Option<iroh_gossip::net::Gossip>>,
+    /// Abort handles for spawned receive-loop per-namespace tasks.
+    /// Dropping the session drops these, ending the tasks.
+    pub receive_handles: Mutex<Vec<tokio::task::AbortHandle>>,
 }
 
 impl AppState {

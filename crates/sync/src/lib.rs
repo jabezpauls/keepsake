@@ -25,6 +25,7 @@ pub use docs::{DocsBridge, DocsKey, SharedCollectionNamespace};
 pub use peer::{Peer, PeerConfig};
 pub use receive::{accept_namespace_ticket, spawn_receive_loop, ReceiveContext};
 pub use share::{
-    publish_album_to_peer, revoke_peer, rotate_collection_key, ShareContext, ShareReceipt,
+    generate_share_ticket, publish_album_to_peer, revoke_peer, rotate_collection_key, ShareContext,
+    ShareReceipt,
 };
 pub use ticket::PairingTicket;

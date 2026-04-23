@@ -66,6 +66,12 @@ impl From<tokio::task::JoinError> for AppError {
     }
 }
 
+impl From<rusqlite::Error> for AppError {
+    fn from(e: rusqlite::Error) -> Self {
+        Self::Db(e.to_string())
+    }
+}
+
 pub type AppResult<T> = std::result::Result<T, AppError>;
 
 /// Convenience: convert an `AppResult` to the `Result<T, String>` shape Tauri expects.

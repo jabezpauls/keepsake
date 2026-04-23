@@ -174,7 +174,7 @@ async fn person_face_thumbnail_impl(
             s.default_collection_key.clone(),
         )
     };
-    let size = size.min(FACE_THUMB_MAX).max(32);
+    let size = size.clamp(32, FACE_THUMB_MAX);
 
     tokio::task::spawn_blocking(move || -> AppResult<Vec<u8>> {
         // Resolve the representative face + the cas-ref/key to its source
@@ -207,15 +207,14 @@ async fn person_face_thumbnail_impl(
             ];
 
             let asset = db::get_asset(&guard, asset_id)?.ok_or(AppError::NotFound)?;
-            let (cas_ref, wrapped_fk) = if let Some(deriv) =
-                db::get_derivative(&guard, asset_id, "thumb1024")?
-            {
-                (deriv, asset.wrapped_file_key.clone())
-            } else if let Some(deriv) = db::get_derivative(&guard, asset_id, "thumb256")? {
-                (deriv, asset.wrapped_file_key.clone())
-            } else {
-                (asset.cas_ref, asset.wrapped_file_key.clone())
-            };
+            let (cas_ref, wrapped_fk) =
+                if let Some(deriv) = db::get_derivative(&guard, asset_id, "thumb1024")? {
+                    (deriv, asset.wrapped_file_key.clone())
+                } else if let Some(deriv) = db::get_derivative(&guard, asset_id, "thumb256")? {
+                    (deriv, asset.wrapped_file_key.clone())
+                } else {
+                    (asset.cas_ref, asset.wrapped_file_key.clone())
+                };
             (bbox, cas_ref, wrapped_fk)
         };
 
@@ -244,10 +243,7 @@ pub async fn asset_faces(
     wire(asset_faces_impl(&state, asset_id).await)
 }
 
-async fn asset_faces_impl(
-    state: &AppState,
-    asset_id: i64,
-) -> AppResult<Vec<AssetFaceView>> {
+async fn asset_faces_impl(state: &AppState, asset_id: i64) -> AppResult<Vec<AssetFaceView>> {
     let (db_handle, user_id, ck) = {
         let guard = state.inner.lock().await;
         let s = guard.session.as_ref().ok_or(AppError::Locked)?;
@@ -295,7 +291,9 @@ async fn asset_faces_impl(
                 f32::from_le_bytes(bbox_plain[8..12].try_into().unwrap()),
                 f32::from_le_bytes(bbox_plain[12..16].try_into().unwrap()),
             ];
-            let person_name = f.person_id.and_then(|pid| name_by_person.get(&pid).cloned());
+            let person_name = f
+                .person_id
+                .and_then(|pid| name_by_person.get(&pid).cloned());
             out.push(AssetFaceView {
                 face_id: f.id,
                 person_id: f.person_id,

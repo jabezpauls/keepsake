@@ -99,6 +99,10 @@ async fn create_user_impl(
             ml_worker,
             ml_runtime: std::sync::Mutex::new(None),
             peer: tokio::sync::Mutex::new(None),
+            blobs: tokio::sync::Mutex::new(None),
+            docs: tokio::sync::Mutex::new(None),
+            gossip: tokio::sync::Mutex::new(None),
+            receive_handles: tokio::sync::Mutex::new(Vec::new()),
         })
     })
     .await
@@ -186,6 +190,10 @@ async fn unlock_impl(
             ml_worker,
             ml_runtime: std::sync::Mutex::new(None),
             peer: tokio::sync::Mutex::new(None),
+            blobs: tokio::sync::Mutex::new(None),
+            docs: tokio::sync::Mutex::new(None),
+            gossip: tokio::sync::Mutex::new(None),
+            receive_handles: tokio::sync::Mutex::new(Vec::new()),
         })
     })
     .await

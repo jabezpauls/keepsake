@@ -269,8 +269,9 @@ async fn add_to_album_impl(state: &AppState, id: i64, asset_ids: Vec<i64>) -> Ap
     .map_err(AppError::from)?
 }
 
-/// Helper shared with export: resolve the CollectionKey for a given album id.
-pub(crate) fn collection_key_for(
+/// Helper shared with export + share: resolve the CollectionKey for a
+/// given album id.
+pub fn collection_key_for(
     master_key_bytes: [u8; 32],
     conn: &rusqlite::Connection,
     user_id: i64,

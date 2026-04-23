@@ -66,6 +66,11 @@ pub fn run() {
             commands::peer::peer_accept_ticket,
             commands::peer::peer_list,
             commands::peer::peer_forget,
+            commands::share::share_album_with_peer,
+            commands::share::list_album_shares,
+            commands::share::revoke_album_share,
+            commands::share::list_incoming_shares,
+            commands::share::accept_incoming_share,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

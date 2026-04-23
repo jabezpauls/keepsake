@@ -13,6 +13,12 @@ use crate::dto::{PairingTicketView, PeerAcceptedView};
 use crate::errors::{wire, AppError, AppResult};
 use crate::state::AppState;
 
+/// Public-facing wrapper so `commands::share` can reuse the lazy-init
+/// without duplicating the pattern.
+pub async fn ensure_peer_public(state: &AppState) -> AppResult<Arc<Peer>> {
+    ensure_peer(state).await
+}
+
 /// Ensure `session.peer` is populated, binding the endpoint if needed.
 /// Returns the live handle. Idempotent.
 async fn ensure_peer(state: &AppState) -> AppResult<Arc<Peer>> {
