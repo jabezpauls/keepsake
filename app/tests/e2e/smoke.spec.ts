@@ -64,7 +64,7 @@ test("create user → add source → timeline → album export", async ({ page }
                 case "asset_detail":
                     return {
                         id: args.id,
-                        mime: "image/jpeg",
+                        mime: "image/x-canon-cr2",
                         bytes: 2048,
                         width: 1920,
                         height: 1080,
@@ -73,9 +73,10 @@ test("create user → add source → timeline → album export", async ({ page }
                         is_video: false,
                         is_live: false,
                         is_motion: false,
-                        is_raw: false,
+                        // Smoke exercises criterion 9: show the RAW toggle.
+                        is_raw: true,
                         is_screenshot: false,
-                        filename: "IMG_0001.JPG",
+                        filename: "IMG_0001.CR2",
                         taken_at_utc: null,
                         gps: null,
                         device: null,
@@ -163,7 +164,12 @@ test("create user → add source → timeline → album export", async ({ page }
     // Back to timeline, open asset detail.
     await page.getByRole("button", { name: "Timeline" }).click();
     await page.locator(".timeline-cell").first().click();
-    await expect(page.getByText("IMG_0001.JPG")).toBeVisible();
+    await expect(page.getByText("IMG_0001.CR2")).toBeVisible();
+    // Criterion 9: RAW badge + toggle visible on RAW assets.
+    await expect(page.getByText("RAW", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("raw-toggle")).toBeVisible();
+    await page.getByTestId("raw-toggle").click();
+    await expect(page.getByTestId("raw-toggle")).toHaveText("Show JPEG preview");
 
     // Create an album, export it.
     await page.getByRole("button", { name: "← Back" }).click();

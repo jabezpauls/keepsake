@@ -186,6 +186,12 @@ p.error {
     padding: 0.1rem 0.55rem;
 }
 
+.asset-sidebar .raw-toggle {
+    margin-top: 0.5rem;
+    align-self: flex-start;
+    font-size: 0.9rem;
+}
+
 .view-host {
     flex: 1;
     overflow: hidden;

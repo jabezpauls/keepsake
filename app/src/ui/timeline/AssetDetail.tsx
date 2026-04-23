@@ -47,6 +47,42 @@ export default function AssetDetail({ id, back }: Props) {
         };
     }, [id, detail]);
 
+    // Criterion 9 surfaces. Two optional paths:
+    // 1. For video-mime assets (including Live / Motion Photos whose MOV
+    //    side the user is viewing), fetch the original bytes and play inline.
+    // 2. For RAW stills, toggle between the JPEG-preview thumbnail and the
+    //    RAW original bytes on demand (RAW decode happens in the browser —
+    //    browsers reject most RAW formats, so we fall back to a download
+    //    link in that case).
+    const [showRaw, setShowRaw] = useState(false);
+    const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+    const isPlayable =
+        !!detail && (detail.is_video || detail.mime.startsWith("video/"));
+    useEffect(() => {
+        if (!detail) return;
+        const needOriginal = isPlayable || (detail.is_raw && showRaw);
+        if (!needOriginal) {
+            setOriginalUrl(null);
+            return;
+        }
+        let url: string | null = null;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const bytes = await api.assetOriginal(id);
+                if (cancelled) return;
+                url = bytesToBlobUrl(bytes, detail.mime);
+                setOriginalUrl(url);
+            } catch {
+                /* e.g. RAW format the browser doesn't decode — leave null */
+            }
+        })();
+        return () => {
+            cancelled = true;
+            if (url) URL.revokeObjectURL(url);
+        };
+    }, [id, detail, isPlayable, showRaw]);
+
     const addToAlbum = async (albumId: number) => {
         await api.addToAlbum(albumId, [id]);
         await queryClient.invalidateQueries({ queryKey: ["albums"] });
@@ -62,7 +98,27 @@ export default function AssetDetail({ id, back }: Props) {
             </nav>
             <div className="asset-detail-body">
                 <div className="asset-image-wrap">
-                    {fullUrl ? <img src={fullUrl} alt={detail.filename} /> : <div className="thumb-loading" />}
+                    {isPlayable ? (
+                        originalUrl ? (
+                            <video
+                                data-testid="asset-video"
+                                src={originalUrl}
+                                controls
+                                autoPlay
+                                loop={detail.is_live || detail.is_motion}
+                                muted={detail.is_live || detail.is_motion}
+                                playsInline
+                            />
+                        ) : (
+                            <div className="thumb-loading">Loading video…</div>
+                        )
+                    ) : detail.is_raw && showRaw && originalUrl ? (
+                        <img src={originalUrl} alt={`${detail.filename} (RAW)`} />
+                    ) : fullUrl ? (
+                        <img src={fullUrl} alt={detail.filename} />
+                    ) : (
+                        <div className="thumb-loading" />
+                    )}
                 </div>
                 <aside className="asset-sidebar">
                     <Row label="Type" value={detail.mime} />
@@ -89,6 +145,16 @@ export default function AssetDetail({ id, back }: Props) {
                         {detail.is_screenshot && <Flag text="Screenshot" />}
                         {detail.is_video && <Flag text="Video" />}
                     </div>
+
+                    {detail.is_raw && (
+                        <button
+                            className="raw-toggle"
+                            onClick={() => setShowRaw((s) => !s)}
+                            data-testid="raw-toggle"
+                        >
+                            {showRaw ? "Show JPEG preview" : "Show RAW original"}
+                        </button>
+                    )}
 
                     <div className="add-to-album">
                         <strong>Add to album</strong>
