@@ -233,6 +233,13 @@ impl CasStore {
         self.cas_dir().join(aa).join(hash_hex)
     }
 
+    /// The CAS root directory (the parent of `cas/`, `iroh/`, `index.db`,
+    /// etc.). The iroh-blobs bridge in `mv-sync` builds its own persistent
+    /// store as a sibling at `<root>/iroh/blobs/`.
+    pub fn root_path(&self) -> &Path {
+        &self.root
+    }
+
     /// Return the on-disk path of the ciphertext file backing `cas_ref`,
     /// plus its size in bytes. Exposed for the Phase-3.2 iroh-blobs
     /// bridge, which content-addresses ciphertext by its own BLAKE3 (the
@@ -280,7 +287,9 @@ mod tests {
         let (tmp, store) = mk_store();
         let _ = tmp;
         let fk = FileKey::random().unwrap();
-        let (cas_ref, _) = store.put_streaming(std::io::Cursor::new(b"hello world"), &fk).unwrap();
+        let (cas_ref, _) = store
+            .put_streaming(std::io::Cursor::new(b"hello world"), &fk)
+            .unwrap();
         let (path, size) = store.open_ciphertext_path(&cas_ref).unwrap();
         assert!(path.exists());
         assert!(size > 0);

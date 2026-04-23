@@ -7,16 +7,22 @@
 //! preset + explicit `RelayMode::Disabled`. A future `MV_IROH_RELAY` env var
 //! or Settings field will opt in to a user-chosen relay.
 //!
-//! This module only covers boot + ticket issuance. The ticket-accept side +
-//! `peer_accept` persistence live in [`super::accept`].
+//! The Phase 3.1 commits covered boot + ticket issuance. Phase 3.2 adds an
+//! optional [`iroh::protocol::Router`] that accepts the blobs ALPN (iroh-
+//! blobs) and — in C7 — the docs ALPN. `mount_router` is idempotent; the
+//! first call transitions the peer from "endpoint-only" to "serving
+//! requests", and subsequent calls are no-ops.
 
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::sync::{Arc, Mutex as StdMutex};
 
 use iroh::endpoint::{presets, Endpoint};
+use iroh::protocol::Router;
 use iroh::{RelayMode, SecretKey};
 use mv_core::crypto::keystore::UnlockedUser;
 use mv_core::{Error, Result};
 
+use crate::blobs::BlobsBridge;
 use crate::ticket::PairingTicket;
 
 /// Config handed to [`Peer::start`]. All fields have sensible defaults so
@@ -38,6 +44,13 @@ pub struct Peer {
     endpoint: Endpoint,
     identity_pub: [u8; 32],
     relay_url: Option<String>,
+    /// Router is installed lazily by `mount_router`. Guarded by a
+    /// `std::sync::Mutex` (not `tokio::sync`) because we only ever swap
+    /// it — no await holds the guard.
+    router: StdMutex<Option<Router>>,
+    /// `BlobsBridge` we've mounted. Kept behind the mutex so we can
+    /// expose it from handlers without re-building.
+    blobs: StdMutex<Option<Arc<BlobsBridge>>>,
 }
 
 impl Peer {
@@ -70,6 +83,8 @@ impl Peer {
             endpoint,
             identity_pub,
             relay_url: config.relay_url,
+            router: StdMutex::new(None),
+            blobs: StdMutex::new(None),
         })
     }
 
@@ -104,9 +119,44 @@ impl Peer {
         )
     }
 
-    /// Reference into the underlying endpoint for C5+ connect logic.
+    /// Reference into the underlying endpoint for connect / downloader logic.
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
+    }
+
+    /// Install the iroh `Router` wrapping the endpoint. Registers the
+    /// `iroh-blobs` ALPN so peers can fetch ciphertext by BLAKE3. The C7
+    /// commit extends this with the `iroh-docs` ALPN.
+    ///
+    /// Idempotent — calling twice reuses the existing router + bridge.
+    /// Boots lazily so users who never share can skip the cost.
+    pub fn mount_router(&self, blobs: Arc<BlobsBridge>) -> Result<()> {
+        let mut slot = self.router.lock().expect("router mutex poisoned");
+        if slot.is_some() {
+            return Ok(());
+        }
+        let router = Router::builder(self.endpoint.clone())
+            .accept(iroh_blobs::protocol::ALPN, blobs.protocol())
+            .spawn();
+        *slot = Some(router);
+        *self.blobs.lock().expect("blobs mutex poisoned") = Some(blobs);
+        Ok(())
+    }
+
+    /// The mounted `BlobsBridge` if any — `None` until `mount_router` has
+    /// been called.
+    pub fn blobs(&self) -> Option<Arc<BlobsBridge>> {
+        self.blobs.lock().expect("blobs mutex poisoned").clone()
+    }
+
+    /// Graceful shutdown. Drops the router (which aborts the accept task)
+    /// and closes the endpoint.
+    pub async fn shutdown(self) {
+        let router = self.router.lock().expect("router mutex poisoned").take();
+        if let Some(r) = router {
+            let _ = r.shutdown().await;
+        }
+        self.endpoint.close().await;
     }
 }
 
@@ -159,5 +209,30 @@ mod tests {
         ticket.verify().expect("own ticket must verify");
         assert_eq!(ticket.iroh_node_pub, user.iroh_node.public.0);
         assert_eq!(ticket.identity_pub, user.identity.public.0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn mount_router_is_idempotent() {
+        use mv_core::cas::CasStore;
+        use std::sync::Arc as StdArc;
+        use tokio::sync::Mutex;
+
+        let user = fresh_user();
+        let peer = Peer::start(&user, PeerConfig::default()).await.unwrap();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cas = StdArc::new(CasStore::open(tmp.path()).unwrap());
+        let db_path = tmp.path().join("index.db");
+        let conn = mv_core::db::schema::open(&db_path).unwrap();
+        let db = StdArc::new(Mutex::new(conn));
+        let bridge = StdArc::new(
+            BlobsBridge::start(tmp.path(), cas, db)
+                .await
+                .expect("bridge"),
+        );
+
+        peer.mount_router(bridge.clone()).unwrap();
+        peer.mount_router(bridge.clone()).unwrap(); // second call no-op
+        assert!(peer.blobs().is_some());
+        peer.shutdown().await;
     }
 }
