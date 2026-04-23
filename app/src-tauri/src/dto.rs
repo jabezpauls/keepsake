@@ -284,6 +284,34 @@ pub struct MlStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+pub struct PairingTicketView {
+    /// Base32-encoded ticket to copy/paste or render as a QR. Always
+    /// lowercase RFC4648 without padding.
+    pub base32: String,
+    /// Hex of the signer's 32-byte Ed25519 node id. Useful for the UI to
+    /// show "my node: abc12345…" next to the ticket.
+    pub my_node_id_hex: String,
+    /// UNIX seconds the ticket was signed at.
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct PeerAcceptedView {
+    /// Hex of the remote node id. UI truncates for display.
+    pub node_id_hex: String,
+    /// Hex of the remote X25519 identity public key. Phase 3.2 consumers use
+    /// this to seal collection keys back.
+    pub identity_pub_hex: String,
+    /// `None` = LAN-only; `Some` = relay the remote published.
+    pub relay_url: Option<String>,
+    #[ts(type = "number")]
+    pub added_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 pub struct MlReindexReport {
     /// Jobs newly inserted for CLIP embedding. Dedupes are excluded.
     #[ts(type = "number")]

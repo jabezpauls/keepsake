@@ -11,6 +11,7 @@ import Search from "../search/Search";
 import MapView from "../map/MapView";
 import People from "../people/People";
 import Duplicates from "../duplicates/Duplicates";
+import Peers from "../peers/Peers";
 
 export default function Shell() {
     const view = useSession((s) => s.view);
@@ -81,6 +82,7 @@ export default function Shell() {
                     view.kind === "albums" || view.kind === "album",
                 )}
                 {navButton("sources", "Sources")}
+                {navButton("peers", "Peers")}
                 <span className="spacer" />
                 {hiddenUnlocked && <span className="hidden-badge">hidden</span>}
                 {ml && <MlBadge status={ml} />}
@@ -97,6 +99,7 @@ export default function Shell() {
                 {view.kind === "map" && <MapView />}
                 {view.kind === "people" && <People />}
                 {view.kind === "duplicates" && <Duplicates />}
+                {view.kind === "peers" && <Peers />}
             </section>
         </div>
     );

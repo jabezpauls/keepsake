@@ -98,6 +98,7 @@ async fn create_user_impl(
             ingests: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             ml_worker,
             ml_runtime: std::sync::Mutex::new(None),
+            peer: tokio::sync::Mutex::new(None),
         })
     })
     .await
@@ -184,6 +185,7 @@ async fn unlock_impl(
             ingests: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             ml_worker,
             ml_runtime: std::sync::Mutex::new(None),
+            peer: tokio::sync::Mutex::new(None),
         })
     })
     .await

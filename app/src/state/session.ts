@@ -11,7 +11,8 @@ export type View =
     | { kind: "search" }
     | { kind: "map" }
     | { kind: "people" }
-    | { kind: "duplicates" };
+    | { kind: "duplicates" }
+    | { kind: "peers" };
 
 interface SessionStore {
     session: SessionHandle | null;

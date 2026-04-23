@@ -60,6 +60,10 @@ pub fn run() {
             commands::ml::ml_status,
             commands::ml::ml_models_enabled,
             commands::ml::ml_reindex,
+            commands::peer::peer_my_ticket,
+            commands::peer::peer_accept_ticket,
+            commands::peer::peer_list,
+            commands::peer::peer_forget,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

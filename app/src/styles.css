@@ -192,6 +192,70 @@ p.error {
     font-size: 0.9rem;
 }
 
+/* --- peers ------------------------------------------------------------- */
+.peers {
+    padding: 1rem 1.5rem;
+    overflow-y: auto;
+}
+.peers-intro {
+    color: var(--muted);
+    font-size: 0.9rem;
+    max-width: 60ch;
+}
+.peers section {
+    margin-top: 1.5rem;
+}
+.peers h3 {
+    margin-bottom: 0.5rem;
+}
+.ticket-card textarea {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    width: 100%;
+    max-width: 60ch;
+    font-size: 0.8rem;
+}
+.ticket-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+}
+.ticket-meta .label {
+    color: var(--muted);
+    margin-right: 0.3rem;
+}
+.peers-accept textarea {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    width: 100%;
+    max-width: 60ch;
+    font-size: 0.8rem;
+}
+.peers-list .peer-row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+}
+.peers-list .peer-row code {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.peers-list .relay {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+.peers-list .added {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+.peers .success {
+    color: #2fa86a;
+}
+
 .view-host {
     flex: 1;
     overflow: hidden;

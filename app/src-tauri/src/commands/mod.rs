@@ -11,6 +11,7 @@ pub mod export;
 pub mod map;
 pub mod ml;
 pub mod nearp;
+pub mod peer;
 pub mod people;
 pub mod search;
 pub mod sources;

@@ -119,6 +119,26 @@ test("create user → add source → timeline → album export", async ({ page }
                     return false;
                 case "ml_reindex":
                     return { embed_queued: 0, detect_queued: 0, assets_touched: 0 };
+                case "peer_my_ticket":
+                    return {
+                        base32: "aeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        my_node_id_hex:
+                            "0000000000000000000000000000000000000000000000000000000000000000",
+                        created_at: 0,
+                    };
+                case "peer_accept_ticket":
+                    return {
+                        node_id_hex:
+                            "1111111111111111111111111111111111111111111111111111111111111111",
+                        identity_pub_hex:
+                            "2222222222222222222222222222222222222222222222222222222222222222",
+                        relay_url: null,
+                        added_at: 0,
+                    };
+                case "peer_list":
+                    return [];
+                case "peer_forget":
+                    return true;
                 default:
                     throw new Error(`mock: unhandled ${cmd}`);
             }
@@ -177,4 +197,10 @@ test("create user → add source → timeline → album export", async ({ page }
     await page.getByPlaceholder("New album name").fill("Smoke Album");
     await page.getByRole("button", { name: "Create" }).click();
     await expect(page.getByText("Smoke Album")).toBeVisible();
+
+    // Peers (Phase 3.1): generate a ticket and confirm the base32 renders.
+    await page.getByRole("button", { name: "Peers" }).click();
+    await page.getByRole("button", { name: "Generate ticket" }).click();
+    await expect(page.getByTestId("peers-ticket-card")).toBeVisible();
+    await expect(page.getByTestId("peers-ticket-base32")).toHaveValue(/aeaa/);
 });

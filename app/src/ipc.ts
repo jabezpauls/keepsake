@@ -12,6 +12,8 @@ export type { IngestStatus } from "./bindings/IngestStatus";
 export type { MapPoint } from "./bindings/MapPoint";
 export type { MlStatus } from "./bindings/MlStatus";
 export type { MlReindexReport } from "./bindings/MlReindexReport";
+export type { PairingTicketView } from "./bindings/PairingTicketView";
+export type { PeerAcceptedView } from "./bindings/PeerAcceptedView";
 export type { NearDupCluster } from "./bindings/NearDupCluster";
 export type { NearDupMember } from "./bindings/NearDupMember";
 export type { PersonView } from "./bindings/PersonView";
@@ -31,6 +33,8 @@ import type { IngestStatus } from "./bindings/IngestStatus";
 import type { MapPoint } from "./bindings/MapPoint";
 import type { MlStatus } from "./bindings/MlStatus";
 import type { MlReindexReport } from "./bindings/MlReindexReport";
+import type { PairingTicketView } from "./bindings/PairingTicketView";
+import type { PeerAcceptedView } from "./bindings/PeerAcceptedView";
 import type { NearDupCluster } from "./bindings/NearDupCluster";
 import type { PersonView } from "./bindings/PersonView";
 import type { SearchHitView } from "./bindings/SearchHitView";
@@ -136,6 +140,14 @@ export const api = {
     mlStatus: () => invoke<MlStatus>("ml_status"),
     mlModelsEnabled: () => invoke<boolean>("ml_models_enabled"),
     mlReindex: () => invoke<MlReindexReport>("ml_reindex"),
+
+    // --- peers (Phase 3.1) ---------------------------------------------
+    peerMyTicket: () => invoke<PairingTicketView>("peer_my_ticket"),
+    peerAcceptTicket: (base32: string) =>
+        invoke<PeerAcceptedView>("peer_accept_ticket", { base32 }),
+    peerList: () => invoke<PeerAcceptedView[]>("peer_list"),
+    peerForget: (nodeIdHex: string) =>
+        invoke<boolean>("peer_forget", { nodeIdHex }),
 };
 
 /// Decode a byte-array returned by `assetThumbnail` / `assetOriginal` into a

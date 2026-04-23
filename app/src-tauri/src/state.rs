@@ -55,6 +55,11 @@ pub struct Session {
     /// or missing weights keep this `None`; search + worker fall back to
     /// their metadata-only paths).
     pub ml_runtime: std::sync::Mutex<Option<Arc<MlRuntime>>>,
+    /// Live Iroh peer for Phase 3+ sync. `None` until the first Peers-tab
+    /// operation triggers a bootstrap; held in a tokio Mutex so async
+    /// commands can await the slow endpoint bind without blocking the
+    /// shared-state lock.
+    pub peer: Mutex<Option<Arc<mv_sync::Peer>>>,
 }
 
 impl AppState {
