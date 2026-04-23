@@ -6,6 +6,8 @@
 //! Later in Phase 3.1: `peer`, `accept`. Phase 3.2 adds iroh-docs namespaces
 //! and the CAS ↔ iroh-blobs bridge.
 
+pub mod peer;
 pub mod ticket;
 
+pub use peer::{Peer, PeerConfig};
 pub use ticket::PairingTicket;
