@@ -310,15 +310,22 @@ pub fn list_timeline_page(
     cursor_day: i64,
     cursor_id: i64,
     limit: u32,
+    hidden_vault_unlocked: bool,
 ) -> Result<Vec<TimelineEntry>> {
-    let mut stmt = conn.prepare(
+    let mut sql = String::from(
         r"SELECT id, taken_at_utc_day, mime, cas_ref, is_video, is_live, is_raw, wrapped_file_key
           FROM asset
-          WHERE (COALESCE(taken_at_utc_day, 0) < ?1)
-             OR (COALESCE(taken_at_utc_day, 0) = ?1 AND id < ?2)
-          ORDER BY COALESCE(taken_at_utc_day, 0) DESC, id DESC
+          WHERE ((COALESCE(taken_at_utc_day, 0) < ?1)
+             OR (COALESCE(taken_at_utc_day, 0) = ?1 AND id < ?2))",
+    );
+    if !hidden_vault_unlocked {
+        sql.push_str(HIDDEN_VAULT_EXCLUSION);
+    }
+    sql.push_str(
+        r" ORDER BY COALESCE(taken_at_utc_day, 0) DESC, id DESC
           LIMIT ?3",
-    )?;
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
         .query_map(params![cursor_day, cursor_id, limit], |r| {
             Ok(TimelineEntry {
@@ -1416,7 +1423,7 @@ mod tests {
             };
             insert_asset_if_new(&conn, &a).unwrap();
         }
-        let page = list_timeline_page(&conn, i64::MAX, i64::MAX, 10).unwrap();
+        let page = list_timeline_page(&conn, i64::MAX, i64::MAX, 10, false).unwrap();
         let days: Vec<_> = page.iter().map(|e| e.taken_at_utc_day.unwrap()).collect();
         assert_eq!(days, vec![200, 150, 100, 50]);
     }

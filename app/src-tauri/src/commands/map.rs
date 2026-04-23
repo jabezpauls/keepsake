@@ -24,10 +24,14 @@ async fn map_points_impl(
     before_day: Option<i64>,
     source_id: Option<i64>,
 ) -> AppResult<Vec<MapPoint>> {
-    let (db_handle, ck) = {
+    let (db_handle, ck, hidden_unlocked) = {
         let guard = state.inner.lock().await;
         let s = guard.session.as_ref().ok_or(AppError::Locked)?;
-        (s.db.clone(), s.default_collection_key.clone())
+        (
+            s.db.clone(),
+            s.default_collection_key.clone(),
+            s.hidden_unlocked,
+        )
     };
     tokio::task::spawn_blocking(move || -> AppResult<Vec<MapPoint>> {
         let guard = db_handle.blocking_lock();
@@ -35,6 +39,7 @@ async fn map_points_impl(
             after_day,
             before_day,
             source_id,
+            hidden_vault_unlocked: hidden_unlocked,
             ..Default::default()
         };
         let rows = db::list_assets_with_gps(&guard, &filter)?;

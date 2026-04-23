@@ -58,6 +58,12 @@ fn hidden_vault_assets_are_excluded_by_default() {
     assert!(!locked_geo.iter().any(|(id, _, _)| *id == hidden));
     let unlocked_geo = db::list_assets_with_gps(conn, &unlocked_f).unwrap();
     assert!(unlocked_geo.iter().any(|(id, _, _)| *id == hidden));
+
+    // Timeline path: list_timeline_page takes the bool directly.
+    let locked_tl = db::list_timeline_page(conn, i64::MAX, i64::MAX, 50, false).unwrap();
+    assert!(!locked_tl.iter().any(|e| e.id == hidden));
+    let unlocked_tl = db::list_timeline_page(conn, i64::MAX, i64::MAX, 50, true).unwrap();
+    assert!(unlocked_tl.iter().any(|e| e.id == hidden));
 }
 
 fn seed_asset(conn: &rusqlite::Connection, source_id: i64, seed: u8, day: Option<i64>) -> i64 {

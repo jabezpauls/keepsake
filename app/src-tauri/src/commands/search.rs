@@ -18,11 +18,16 @@ pub async fn search_assets(
 }
 
 async fn search_assets_impl(state: &AppState, req: SearchRequest) -> AppResult<Vec<SearchHitView>> {
-    let (db_handle, ck, runtime) = {
+    let (db_handle, ck, runtime, hidden_unlocked) = {
         let guard = state.inner.lock().await;
         let s = guard.session.as_ref().ok_or(AppError::Locked)?;
         let rt = s.ml_runtime.lock().unwrap().clone();
-        (s.db.clone(), s.default_collection_key.clone(), rt)
+        (
+            s.db.clone(),
+            s.default_collection_key.clone(),
+            rt,
+            s.hidden_unlocked,
+        )
     };
 
     tokio::task::spawn_blocking(move || -> AppResult<Vec<SearchHitView>> {
@@ -51,9 +56,7 @@ async fn search_assets_impl(state: &AppState, req: SearchRequest) -> AppResult<V
             camera_make: req.camera_make,
             lens: req.lens,
             limit: req.limit.clamp(1, 500),
-            // Threading the session's hidden-unlock flag lands in the next
-            // commit (C5); hold the safe default here per architecture.md §9.
-            hidden_vault_unlocked: false,
+            hidden_vault_unlocked: hidden_unlocked,
         };
         // Runtime may be `None` (off-flag build or models not loaded yet).
         // `search()` handles that case and falls back to date-ordered hits.

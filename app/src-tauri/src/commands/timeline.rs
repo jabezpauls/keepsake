@@ -27,17 +27,17 @@ async fn timeline_page_impl(
     cursor: Option<TimelineCursor>,
     limit: Option<u32>,
 ) -> AppResult<TimelinePage> {
-    let db_handle = {
+    let (db_handle, hidden_unlocked) = {
         let guard = state.inner.lock().await;
         let s = guard.session.as_ref().ok_or(AppError::Locked)?;
-        s.db.clone()
+        (s.db.clone(), s.hidden_unlocked)
     };
     let cur = cursor.unwrap_or_else(TimelineCursor::start);
     let lim = limit.unwrap_or(DEFAULT_LIMIT).min(500);
 
     tokio::task::spawn_blocking(move || -> AppResult<TimelinePage> {
         let guard = db_handle.blocking_lock();
-        let rows = db::list_timeline_page(&guard, cur.day, cur.id, lim)?;
+        let rows = db::list_timeline_page(&guard, cur.day, cur.id, lim, hidden_unlocked)?;
         let entries: Vec<_> = rows
             .iter()
             .map(|r| TimelineEntryView {
