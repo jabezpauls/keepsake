@@ -390,10 +390,15 @@ pub fn upsert_collection_key(
     wrapping: &str,
     wrapped_key: &[u8],
 ) -> Result<()> {
+    // Target the `idx_collection_key_local` partial unique index: the WHERE
+    // predicate must match the index's WHERE clause for SQLite to accept
+    // the conflict target after the schema v4 reshape.
     conn.execute(
         r"INSERT INTO collection_key (collection_id, user_id, wrapping, wrapped_key)
           VALUES (?1, ?2, ?3, ?4)
-          ON CONFLICT(collection_id, user_id, wrapping) DO UPDATE SET wrapped_key = excluded.wrapped_key",
+          ON CONFLICT(collection_id, user_id, wrapping)
+              WHERE user_id IS NOT NULL
+              DO UPDATE SET wrapped_key = excluded.wrapped_key",
         params![collection_id, user_id, wrapping, wrapped_key],
     )?;
     Ok(())

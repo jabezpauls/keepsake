@@ -213,6 +213,41 @@ CREATE INDEX IF NOT EXISTS idx_peer_accept_owner
     ON peer_accept(owner_user_id, added_at DESC);
 ";
 
+/// DDL v4 — Phase 3.2. Reshapes `collection_key` to accept peer-wrapped rows
+/// (collection key sealed for a remote X25519 identity, not a local user).
+/// Adds `ciphertext_blake3` to `asset` so the iroh-blobs bridge can address
+/// the on-disk ciphertext by its BLAKE3 without rehashing every request.
+///
+/// The reshape uses SQLite's 12-step ALTER pattern: create new table, copy
+/// existing rows, drop old, rename. `user_id` becomes NULLable so peer
+/// wrappings can leave it NULL; `peer_identity_pub` is the new column and
+/// is NULLable so local wrappings can leave it NULL. Two partial unique
+/// indexes keep the `(cid, recipient, wrapping)` invariant on each side.
+pub const DDL_V4: &str = r"
+CREATE TABLE collection_key_v4 (
+    collection_id     INTEGER NOT NULL REFERENCES collection(id),
+    user_id           INTEGER REFERENCES user(id),
+    peer_identity_pub BLOB,
+    wrapping          TEXT NOT NULL,
+    wrapped_key       BLOB NOT NULL
+);
+INSERT INTO collection_key_v4 (collection_id, user_id, peer_identity_pub, wrapping, wrapped_key)
+    SELECT collection_id, user_id, NULL, wrapping, wrapped_key FROM collection_key;
+DROP TABLE collection_key;
+ALTER TABLE collection_key_v4 RENAME TO collection_key;
+
+CREATE UNIQUE INDEX idx_collection_key_local
+    ON collection_key(collection_id, user_id, wrapping)
+    WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_collection_key_peer
+    ON collection_key(collection_id, peer_identity_pub, wrapping)
+    WHERE peer_identity_pub IS NOT NULL;
+
+ALTER TABLE asset ADD COLUMN ciphertext_blake3 BLOB;
+CREATE INDEX IF NOT EXISTS idx_asset_ciphertext_hash
+    ON asset(ciphertext_blake3) WHERE ciphertext_blake3 IS NOT NULL;
+";
+
 /// Set up an open SQLite connection with the Phase-1 pragmas.
 pub fn configure_connection(conn: &Connection) -> Result<()> {
     // WAL + foreign keys + synchronous=NORMAL per §4.

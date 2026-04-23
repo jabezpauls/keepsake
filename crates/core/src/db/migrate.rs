@@ -9,7 +9,7 @@ use rusqlite::Connection;
 use crate::Result;
 
 /// Target schema version shipped by this build.
-pub const CURRENT_VERSION: i32 = 3;
+pub const CURRENT_VERSION: i32 = 4;
 
 /// Apply any migrations needed to bring `conn` up to [`CURRENT_VERSION`].
 pub fn apply(conn: &Connection) -> Result<()> {
@@ -34,6 +34,10 @@ pub fn apply(conn: &Connection) -> Result<()> {
     if version < 3 {
         conn.execute_batch(super::schema::DDL_V3)?;
         conn.pragma_update(None, "user_version", 3)?;
+    }
+    if version < 4 {
+        conn.execute_batch(super::schema::DDL_V4)?;
+        conn.pragma_update(None, "user_version", 4)?;
     }
     Ok(())
 }
@@ -108,5 +112,57 @@ mod tests {
             )
             .unwrap();
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn v3_to_v4_reshapes_collection_key_and_adds_ciphertext_blake3() {
+        let conn = Connection::open_in_memory().unwrap();
+        super::super::schema::init(&conn).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V2).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V3).unwrap();
+        conn.pragma_update(None, "user_version", 3_i32).unwrap();
+
+        apply(&conn).unwrap();
+
+        // collection_key now has peer_identity_pub.
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(collection_key)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.iter().any(|c| c == "peer_identity_pub"));
+
+        // user_id became nullable (partial unique index handles dedupe).
+        let user_id_notnull: i64 = conn
+            .query_row(
+                "SELECT \"notnull\" FROM pragma_table_info('collection_key') WHERE name='user_id'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(user_id_notnull, 0, "user_id must be nullable post-v4");
+
+        // asset.ciphertext_blake3 column exists.
+        let acols: Vec<String> = conn
+            .prepare("PRAGMA table_info(asset)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(acols.iter().any(|c| c == "ciphertext_blake3"));
+
+        // Partial unique indexes are present.
+        let idxs: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='collection_key'")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(idxs.iter().any(|n| n == "idx_collection_key_local"));
+        assert!(idxs.iter().any(|n| n == "idx_collection_key_peer"));
     }
 }
