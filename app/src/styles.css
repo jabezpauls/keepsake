@@ -469,38 +469,91 @@ p.error {
 
 .people-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1.5rem 1rem;
+    justify-items: center;
 }
 
 .person-card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
 }
 
 .person-card .thumb {
     aspect-ratio: 1;
     object-fit: cover;
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background: #222;
+}
+
+.person-cover-button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: block;
+    line-height: 0;
+}
+
+.person-cover-button:hover {
+    opacity: 0.85;
 }
 
 .person-cover-empty {
     aspect-ratio: 1;
+    width: 160px;
+    height: 160px;
     background: #222;
+    border-radius: 50%;
+}
+
+.person-detail {
+    padding: 1rem;
+}
+
+.person-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.person-name-edit {
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    cursor: pointer;
+    text-align: left;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.person-name-edit h2 {
+    margin: 0;
 }
 
 .person-body {
-    padding: 0.75rem;
+    padding: 0.5rem 0;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    align-items: center;
+    gap: 0.2rem;
 }
 
 .person-name {
     background: transparent;
     border: none;
-    text-align: left;
+    text-align: center;
     padding: 0;
     font-weight: 600;
     color: var(--fg);
@@ -509,6 +562,20 @@ p.error {
 .person-count {
     color: var(--muted);
     font-size: 0.85rem;
+}
+
+.person-body .muted-button {
+    align-self: center;
+}
+
+.person-detail-header .person-avatar,
+.person-detail-header .person-avatar.thumb {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #222;
+    flex: 0 0 96px;
 }
 
 .muted-button {

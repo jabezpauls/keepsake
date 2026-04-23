@@ -4,13 +4,22 @@
 //! rebuild-clusters trigger. Detection + embedding run off the `ml-models`
 //! feature flag (Step 4) — this module only manages the schema side.
 
-use mv_core::crypto::{open_row, seal_row};
+use mv_core::crypto::{open_row, seal_row, unwrap_file_key};
 use mv_core::db;
+use mv_core::media::crop_face_webp;
 use tauri::State;
 
 use crate::dto::PersonView;
 use crate::errors::{wire, AppError, AppResult};
 use crate::state::AppState;
+
+/// Upper bound on requested face-thumb size — clamp defensively even though
+/// the UI only ever asks for 96 / 256.
+const FACE_THUMB_MAX: u32 = 512;
+/// Per-side padding fraction (30% total = 15% each side). Sits between
+/// Immich's 20% total and Apple Photos's more generous framing — tight
+/// enough to read as "just the face" at avatar sizes.
+const FACE_THUMB_PADDING: f32 = 0.15;
 
 #[tauri::command]
 pub async fn list_people(
@@ -135,6 +144,88 @@ async fn merge_people_impl(state: &AppState, src: i64, dst: i64) -> AppResult<()
         let guard = db_handle.blocking_lock();
         db::merge_persons(&guard, src, dst)?;
         Ok(())
+    })
+    .await
+    .map_err(AppError::from)?
+}
+
+#[tauri::command]
+pub async fn person_face_thumbnail(
+    state: State<'_, AppState>,
+    person_id: i64,
+    size: u32,
+) -> Result<Vec<u8>, String> {
+    wire(person_face_thumbnail_impl(&state, person_id, size).await)
+}
+
+async fn person_face_thumbnail_impl(
+    state: &AppState,
+    person_id: i64,
+    size: u32,
+) -> AppResult<Vec<u8>> {
+    let (db_handle, cas, ck) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (
+            s.db.clone(),
+            s.cas.clone(),
+            s.default_collection_key.clone(),
+        )
+    };
+    let size = size.min(FACE_THUMB_MAX).max(32);
+
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<u8>> {
+        // Resolve the representative face + the cas-ref/key to its source
+        // thumb in one DB guard scope.
+        let (bbox, cas_ref, wrapped_fk) = {
+            let guard = db_handle.blocking_lock();
+            let row: Result<(i64, Vec<u8>), rusqlite::Error> = guard.query_row(
+                r"SELECT asset_id, bbox_ct
+                    FROM face
+                    WHERE person_id = ?1
+                    ORDER BY quality DESC NULLS LAST, id ASC
+                    LIMIT 1",
+                [person_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            );
+            let (asset_id, bbox_ct) = match row {
+                Ok(t) => t,
+                Err(rusqlite::Error::QueryReturnedNoRows) => return Err(AppError::NotFound),
+                Err(e) => return Err(AppError::from(mv_core::Error::from(e))),
+            };
+            let bbox_plain = open_row(&bbox_ct, asset_id as u64, ck.as_bytes())?;
+            if bbox_plain.len() != 16 {
+                return Err(AppError::BadRequest("invalid face bbox payload".into()));
+            }
+            let bbox: [f32; 4] = [
+                f32::from_le_bytes(bbox_plain[0..4].try_into().unwrap()),
+                f32::from_le_bytes(bbox_plain[4..8].try_into().unwrap()),
+                f32::from_le_bytes(bbox_plain[8..12].try_into().unwrap()),
+                f32::from_le_bytes(bbox_plain[12..16].try_into().unwrap()),
+            ];
+
+            let asset = db::get_asset(&guard, asset_id)?.ok_or(AppError::NotFound)?;
+            let (cas_ref, wrapped_fk) = if let Some(deriv) =
+                db::get_derivative(&guard, asset_id, "thumb1024")?
+            {
+                (deriv, asset.wrapped_file_key.clone())
+            } else if let Some(deriv) = db::get_derivative(&guard, asset_id, "thumb256")? {
+                (deriv, asset.wrapped_file_key.clone())
+            } else {
+                (asset.cas_ref, asset.wrapped_file_key.clone())
+            };
+            (bbox, cas_ref, wrapped_fk)
+        };
+
+        let fk = unwrap_file_key(&wrapped_fk, &ck)?;
+        let thumb_bytes = cas.get(&cas_ref, &fk)?;
+
+        // Best-effort crop. Any decode/encode failure falls back to the raw
+        // thumb so the UI never shows a broken image.
+        match crop_face_webp(&thumb_bytes, bbox, size, FACE_THUMB_PADDING) {
+            Ok(bytes) => Ok(bytes),
+            Err(_) => Ok(thumb_bytes),
+        }
     })
     .await
     .map_err(AppError::from)?

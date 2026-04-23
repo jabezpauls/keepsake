@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../../ipc";
-import ThumbImage from "../timeline/ThumbImage";
+import { useSession } from "../../state/session";
+import PersonFaceThumb from "./PersonFaceThumb";
 import type { PersonView } from "../../bindings/PersonView";
 
 export default function People() {
     const qc = useQueryClient();
+    const setView = useSession((s) => s.setView);
     const query = useQuery({
         queryKey: ["people"],
         queryFn: () => api.listPeople(false),
@@ -43,16 +45,23 @@ export default function People() {
             <div className="people-grid">
                 {query.data?.map((p: PersonView) => (
                     <div key={p.id} className="person-card">
-                        {p.cover_asset_id !== null ? (
-                            <ThumbImage
-                                assetId={p.cover_asset_id}
-                                size={256}
-                                mime="image/jpeg"
-                                alt={p.name ?? "unnamed"}
-                            />
-                        ) : (
-                            <div className="person-cover-empty" />
-                        )}
+                        <button
+                            className="person-cover-button"
+                            onClick={() =>
+                                setView({ kind: "person", id: p.id, name: p.name })
+                            }
+                            title="View this person's photos"
+                        >
+                            {p.cover_asset_id !== null ? (
+                                <PersonFaceThumb
+                                    personId={p.id}
+                                    size={256}
+                                    alt={p.name ?? "unnamed"}
+                                />
+                            ) : (
+                                <div className="person-cover-empty" />
+                            )}
+                        </button>
                         <div className="person-body">
                             {editing === p.id ? (
                                 <form

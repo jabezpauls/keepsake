@@ -5,9 +5,11 @@
 //! never fail ingest because of an unreadable EXIF block.
 
 pub mod derive;
+pub mod face_crop;
 pub mod pairs;
 pub mod probe;
 
 pub use derive::{derive_thumbnails, ThumbnailOutput, ThumbnailSize};
+pub use face_crop::crop_face_webp;
 pub use pairs::{detect_pairs, LivePair, PairReport, RawJpegPair};
 pub use probe::{probe_path, MediaProbe};

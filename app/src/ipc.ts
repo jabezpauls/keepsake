@@ -115,6 +115,8 @@ export const api = {
         invoke<null>("merge_people", { src, dst }),
     splitPerson: (sourcePerson: number, faceIds: number[]) =>
         invoke<number>("split_person", { sourcePerson, faceIds }),
+    personFaceThumbnail: (personId: number, size: number) =>
+        invoke<number[]>("person_face_thumbnail", { personId, size }),
 
     // --- search ---------------------------------------------------------
     searchAssets: (request: SearchRequest) =>
