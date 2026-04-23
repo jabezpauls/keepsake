@@ -11,6 +11,7 @@ export type { IngestState } from "./bindings/IngestState";
 export type { IngestStatus } from "./bindings/IngestStatus";
 export type { MapPoint } from "./bindings/MapPoint";
 export type { MlStatus } from "./bindings/MlStatus";
+export type { MlReindexReport } from "./bindings/MlReindexReport";
 export type { NearDupCluster } from "./bindings/NearDupCluster";
 export type { NearDupMember } from "./bindings/NearDupMember";
 export type { PersonView } from "./bindings/PersonView";
@@ -29,6 +30,7 @@ import type { ExportReport } from "./bindings/ExportReport";
 import type { IngestStatus } from "./bindings/IngestStatus";
 import type { MapPoint } from "./bindings/MapPoint";
 import type { MlStatus } from "./bindings/MlStatus";
+import type { MlReindexReport } from "./bindings/MlReindexReport";
 import type { NearDupCluster } from "./bindings/NearDupCluster";
 import type { PersonView } from "./bindings/PersonView";
 import type { SearchHitView } from "./bindings/SearchHitView";
@@ -133,6 +135,7 @@ export const api = {
     // --- ml -------------------------------------------------------------
     mlStatus: () => invoke<MlStatus>("ml_status"),
     mlModelsEnabled: () => invoke<boolean>("ml_models_enabled"),
+    mlReindex: () => invoke<MlReindexReport>("ml_reindex"),
 };
 
 /// Decode a byte-array returned by `assetThumbnail` / `assetOriginal` into a

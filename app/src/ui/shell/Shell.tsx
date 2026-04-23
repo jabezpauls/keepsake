@@ -84,6 +84,7 @@ export default function Shell() {
                 <span className="spacer" />
                 {hiddenUnlocked && <span className="hidden-badge">hidden</span>}
                 {ml && <MlBadge status={ml} />}
+                {ml?.models_available && <ReindexButton />}
                 <button onClick={lock}>Lock</button>
             </nav>
             <section className="view-host">
@@ -98,6 +99,36 @@ export default function Shell() {
                 {view.kind === "duplicates" && <Duplicates />}
             </section>
         </div>
+    );
+}
+
+function ReindexButton() {
+    const [busy, setBusy] = useState(false);
+    const [last, setLast] = useState<string | null>(null);
+    const run = async () => {
+        setBusy(true);
+        try {
+            const r = await api.mlReindex();
+            setLast(
+                r.embed_queued + r.detect_queued === 0
+                    ? "library already reindexed"
+                    : `queued ${r.embed_queued + r.detect_queued} jobs across ${r.assets_touched} assets`,
+            );
+        } catch (err) {
+            setLast(String(err));
+        } finally {
+            setBusy(false);
+        }
+    };
+    return (
+        <button
+            className="reindex-btn"
+            onClick={run}
+            disabled={busy}
+            title={last ?? "Enqueue ML jobs for assets that haven't been processed"}
+        >
+            {busy ? "Reindexing…" : "Reindex ML"}
+        </button>
     );
 }
 

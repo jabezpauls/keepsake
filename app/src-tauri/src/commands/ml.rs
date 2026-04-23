@@ -4,10 +4,10 @@ use std::path::Path;
 #[cfg(feature = "ml-models")]
 use std::sync::Arc;
 
-use mv_core::db;
+use mv_core::{db, ml};
 use tauri::State;
 
-use crate::dto::MlStatus;
+use crate::dto::{MlReindexReport, MlStatus};
 use crate::errors::{wire, AppError, AppResult};
 use crate::state::{AppState, Session};
 
@@ -56,6 +56,34 @@ async fn ml_status_impl(state: &AppState) -> AppResult<MlStatus> {
 #[tauri::command]
 pub fn ml_models_enabled() -> bool {
     mv_core::ml::MODELS_ENABLED
+}
+
+/// Enqueue embed + detect jobs for every asset that hasn't had them yet.
+/// Idempotent. Safe to run any time; even off-flag it populates the queue
+/// so the work happens as soon as weights arrive.
+#[tauri::command]
+pub async fn ml_reindex(state: State<'_, AppState>) -> Result<MlReindexReport, String> {
+    wire(ml_reindex_impl(&state).await)
+}
+
+async fn ml_reindex_impl(state: &AppState) -> AppResult<MlReindexReport> {
+    let db_handle = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        s.db.clone()
+    };
+    tokio::task::spawn_blocking(move || -> AppResult<MlReindexReport> {
+        let guard = db_handle.blocking_lock();
+        let now = chrono::Utc::now().timestamp();
+        let report = ml::reindex::reindex_all(&guard, now)?;
+        Ok(MlReindexReport {
+            embed_queued: report.embed_queued,
+            detect_queued: report.detect_queued,
+            assets_touched: report.assets_touched,
+        })
+    })
+    .await
+    .map_err(AppError::from)?
 }
 
 /// Post-unlock hook: try to bootstrap the ML runtime, install a per-asset key

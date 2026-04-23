@@ -281,3 +281,18 @@ pub struct MlStatus {
     #[ts(type = "number")]
     pub failed: i64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct MlReindexReport {
+    /// Jobs newly inserted for CLIP embedding. Dedupes are excluded.
+    #[ts(type = "number")]
+    pub embed_queued: u32,
+    /// Jobs newly inserted for face detection + embedding.
+    #[ts(type = "number")]
+    pub detect_queued: u32,
+    /// Distinct assets that at least one sweep hit — useful for showing a
+    /// single "N assets reindexed" number.
+    #[ts(type = "number")]
+    pub assets_touched: u32,
+}
