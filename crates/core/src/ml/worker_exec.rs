@@ -16,15 +16,27 @@ use crate::db;
 use crate::{Error, Result};
 
 use super::clip;
-use super::faces::{self, cluster_centroids, dbscan_cosine, hungarian_reassign, ClusterId};
+use super::faces::{
+    self, cluster_centroids, dbscan_cosine, hungarian_reassign, merge_close_centroids, ClusterId,
+};
 use super::runtime::MlRuntime;
 
-/// Default DBSCAN cosine-distance threshold for face clustering
-/// (plans/phase-2-browsing.md §3.iv).
-const PERSON_DBSCAN_EPS: f32 = 0.4;
-/// Minimum samples per DBSCAN cluster — Phase 2 pins 2 (singletons stay
-/// noise; People tab suppresses them).
-const PERSON_DBSCAN_MIN: usize = 2;
+/// DBSCAN cosine-distance threshold for initial cluster formation. Kept at
+/// 0.5 — the follow-up `merge_close_centroids` pass (below) collapses any
+/// within-identity splits that the strict formation threshold produces, so
+/// we no longer need to loosen eps further to compensate for pose/lighting
+/// variance on iPhone-backup libraries.
+const PERSON_DBSCAN_EPS: f32 = 0.5;
+/// Minimum samples per DBSCAN cluster. 3 matches Immich's default and is
+/// the smallest count that reliably distinguishes "real person" from
+/// coincidental two-face sessions (same couple at a wedding, etc.).
+/// Singletons and pairs stay noise (person_id=NULL) until they grow.
+const PERSON_DBSCAN_MIN: usize = 3;
+/// Post-DBSCAN centroid-merge threshold in cosine-distance units. Mirrors
+/// PhotoPrism's `FACE_MATCH_DIST` (0.46) and Immich's two-step recognition-
+/// distance recipe — tighter than formation, loose enough to reunite a
+/// person photographed under meaningfully different lighting/pose.
+const PERSON_MERGE_DIST: f32 = 0.35;
 /// Hungarian stable-reassign threshold — below this similarity, the new
 /// cluster gets a fresh person_id rather than inheriting an old one.
 const PERSON_REASSIGN_SIM: f32 = 0.55;
@@ -162,7 +174,8 @@ pub fn run_rebuild_person_clusters(
         return Ok(());
     }
 
-    let new_labels = dbscan_cosine(&vectors, PERSON_DBSCAN_EPS, PERSON_DBSCAN_MIN);
+    let mut new_labels = dbscan_cosine(&vectors, PERSON_DBSCAN_EPS, PERSON_DBSCAN_MIN);
+    merge_close_centroids(&mut new_labels, &vectors, PERSON_MERGE_DIST);
     let new_centroids = cluster_centroids(&vectors, &new_labels);
 
     // Build old centroids per existing person using the same face vectors we

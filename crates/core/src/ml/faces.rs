@@ -578,6 +578,92 @@ pub fn dbscan_cosine(vectors: &[Vec<f32>], eps: f32, min_samples: usize) -> Vec<
     labels
 }
 
+/// Post-DBSCAN merge pass. After an initial (stricter) DBSCAN, collapse any
+/// pair of clusters whose centroids fall within `merge_cos_distance`. Uses
+/// single-linkage semantics via union-find — transitivity is respected
+/// (A~B, B~C → A~C), so lighting/pose drift that fragments one person into
+/// two or three sub-clusters recovers in a single pass.
+///
+/// The pattern mirrors PhotoPrism's two-tier `FACE_CLUSTER_DIST` →
+/// `FACE_MATCH_DIST` design: keep formation strict to avoid cross-identity
+/// merges, then let a looser centroid threshold heal the within-identity
+/// splits. Noise points (`-1`) are left untouched.
+///
+/// Complexity: O(k²) on cluster count k, which is the practical bound we
+/// care about (k ≪ n in every realistic library).
+pub fn merge_close_centroids(
+    labels: &mut [ClusterId],
+    vectors: &[Vec<f32>],
+    merge_cos_distance: f32,
+) {
+    debug_assert_eq!(labels.len(), vectors.len());
+    use std::collections::HashMap;
+
+    let cents = cluster_centroids(vectors, labels);
+    if cents.len() < 2 {
+        return;
+    }
+
+    let mut parent: HashMap<ClusterId, ClusterId> =
+        cents.iter().map(|(id, _, _)| (*id, *id)).collect();
+
+    for i in 0..cents.len() {
+        for j in (i + 1)..cents.len() {
+            let d = 1.0 - cosine(&cents[i].1, &cents[j].1);
+            if d <= merge_cos_distance {
+                union_cluster(&mut parent, cents[i].0, cents[j].0);
+            }
+        }
+    }
+
+    for lbl in labels.iter_mut() {
+        if *lbl < 0 {
+            continue;
+        }
+        *lbl = find_cluster(&mut parent, *lbl);
+    }
+}
+
+fn find_cluster(
+    parent: &mut std::collections::HashMap<ClusterId, ClusterId>,
+    x: ClusterId,
+) -> ClusterId {
+    // Walk to root, then path-compress.
+    let mut current = x;
+    loop {
+        let p = *parent.get(&current).expect("cluster id registered");
+        if p == current {
+            break;
+        }
+        current = p;
+    }
+    let root = current;
+    let mut y = x;
+    loop {
+        let p = *parent.get(&y).expect("cluster id registered");
+        if p == y {
+            break;
+        }
+        parent.insert(y, root);
+        y = p;
+    }
+    root
+}
+
+fn union_cluster(
+    parent: &mut std::collections::HashMap<ClusterId, ClusterId>,
+    a: ClusterId,
+    b: ClusterId,
+) {
+    let ra = find_cluster(parent, a);
+    let rb = find_cluster(parent, b);
+    if ra != rb {
+        // Smaller id wins for determinism — keeps label output stable.
+        let (root, child) = if ra < rb { (ra, rb) } else { (rb, ra) };
+        parent.insert(child, root);
+    }
+}
+
 /// Compute the mean vector of each cluster. Returns a map from cluster_id to
 /// (centroid, member count). Ignores `-1` (noise).
 pub fn cluster_centroids(
@@ -952,6 +1038,68 @@ mod tests {
             assigned > 10,
             "fresh id should be past old-max, got {assigned}"
         );
+    }
+
+    #[test]
+    fn merge_close_centroids_collapses_adjacent_clusters() {
+        // Two tight clusters at a ~0.18 centroid-cosine-distance apart.
+        // DBSCAN at eps=0.1 keeps them separate (precondition). The merge
+        // pass at threshold 0.35 must collapse them into one cluster.
+        let a1 = unit(&[1.0, 0.10, 0.0]);
+        let a2 = unit(&[0.99, 0.11, 0.0]);
+        let a3 = unit(&[0.98, 0.09, 0.0]);
+        let b1 = unit(&[0.88, -0.48, 0.0]);
+        let b2 = unit(&[0.87, -0.49, 0.0]);
+        let b3 = unit(&[0.89, -0.47, 0.0]);
+        let vs = vec![a1, a2, a3, b1, b2, b3];
+        let mut labels = dbscan_cosine(&vs, 0.1, 2);
+
+        let pre: std::collections::HashSet<_> = labels.iter().filter(|&&l| l >= 0).collect();
+        assert_eq!(
+            pre.len(),
+            2,
+            "precondition: DBSCAN should yield 2 clusters, got {labels:?}"
+        );
+
+        merge_close_centroids(&mut labels, &vs, 0.35);
+
+        let post: std::collections::HashSet<_> = labels.iter().filter(|&&l| l >= 0).collect();
+        assert_eq!(
+            post.len(),
+            1,
+            "after centroid merge at 0.35 both clusters collapse: {labels:?}"
+        );
+        // All six points should share one label.
+        assert!(labels.iter().all(|&l| l == labels[0]));
+    }
+
+    #[test]
+    fn merge_close_centroids_leaves_distant_clusters_alone() {
+        // Two orthogonal-direction clusters (cosine distance ~1.0); far
+        // above the 0.35 merge threshold, so they must remain distinct.
+        let a1 = unit(&[1.0, 0.0, 0.0]);
+        let a2 = unit(&[0.99, 0.05, 0.0]);
+        let b1 = unit(&[0.0, 1.0, 0.0]);
+        let b2 = unit(&[0.05, 0.99, 0.0]);
+        let vs = vec![a1, a2, b1, b2];
+        let mut labels = dbscan_cosine(&vs, 0.1, 2);
+        merge_close_centroids(&mut labels, &vs, 0.35);
+        let distinct: std::collections::HashSet<_> = labels.iter().filter(|&&l| l >= 0).collect();
+        assert_eq!(distinct.len(), 2);
+    }
+
+    #[test]
+    fn merge_close_centroids_preserves_noise_points() {
+        // A tight 2-cluster pair + an isolated orthogonal point. The isolated
+        // point should stay noise (-1) regardless of the merge pass.
+        let a1 = unit(&[1.0, 0.0, 0.0]);
+        let a2 = unit(&[0.99, 0.05, 0.0]);
+        let loner = unit(&[0.0, 0.0, 1.0]);
+        let vs = vec![a1, a2, loner];
+        let mut labels = dbscan_cosine(&vs, 0.1, 2);
+        assert_eq!(labels[2], -1, "precondition: loner must start as noise");
+        merge_close_centroids(&mut labels, &vs, 0.35);
+        assert_eq!(labels[2], -1, "noise is preserved through merge");
     }
 
     #[test]
