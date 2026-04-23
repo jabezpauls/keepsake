@@ -114,12 +114,18 @@ export default function Search() {
                 {query.isLoading && <div className="timeline-loading">Searching…</div>}
                 {query.data?.length === 0 && <div className="timeline-empty">No matches.</div>}
                 <div className="timeline-row wrap">
-                    {query.data?.map((hit) => (
+                    {query.data?.map((hit, idx) => (
                         <button
                             key={hit.id}
                             className="timeline-cell"
                             onClick={() =>
-                                setView({ kind: "asset", id: hit.id, back: currentView })
+                                setView({
+                                    kind: "asset",
+                                    id: hit.id,
+                                    back: currentView,
+                                    neighbors: query.data!.map((h) => h.id),
+                                    index: idx,
+                                })
                             }
                         >
                             <ThumbImage assetId={hit.id} size={256} mime={hit.mime} alt="" />

@@ -7,10 +7,22 @@ export type View =
     | { kind: "sources" }
     | { kind: "albums" }
     | { kind: "album"; id: number; name: string }
-    | { kind: "asset"; id: number; back: View }
+    | {
+          kind: "asset";
+          id: number;
+          back: View;
+          // Ordered list of sibling asset ids in the caller's grid, so
+          // AssetDetail can offer arrow-key / chevron prev-next navigation.
+          // Optional: callers that open the viewer without a grid context
+          // (notifications, direct links) leave them unset and the viewer
+          // degrades to a single-asset view.
+          neighbors?: number[];
+          index?: number;
+      }
     | { kind: "search" }
     | { kind: "map" }
     | { kind: "people" }
+    | { kind: "person"; id: number; name: string | null }
     | { kind: "duplicates" }
     | { kind: "peers" };
 

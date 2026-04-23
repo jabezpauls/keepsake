@@ -151,12 +151,20 @@ export default function MapView() {
                         <button onClick={() => setSelected(null)}>Close</button>
                     </div>
                     <div className="map-sheet-grid">
-                        {selected.slice(0, 60).map((p) => (
+                        {selected.slice(0, 60).map((p, idx) => (
                             <button
                                 key={p.asset_id}
                                 className="timeline-cell"
                                 onClick={() =>
-                                    setView({ kind: "asset", id: p.asset_id, back: currentView })
+                                    setView({
+                                        kind: "asset",
+                                        id: p.asset_id,
+                                        back: currentView,
+                                        neighbors: selected
+                                            .slice(0, 60)
+                                            .map((x) => x.asset_id),
+                                        index: idx,
+                                    })
                                 }
                             >
                                 <ThumbImage assetId={p.asset_id} size={256} mime="image/jpeg" alt="" />

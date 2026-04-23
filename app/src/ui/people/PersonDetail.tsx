@@ -94,12 +94,18 @@ export default function PersonDetail({
                 </span>
             </div>
             <div className="timeline-row wrap">
-                {hits.data?.map((h) => (
+                {hits.data?.map((h, idx) => (
                     <button
                         key={h.id}
                         className="timeline-cell"
                         onClick={() =>
-                            setView({ kind: "asset", id: h.id, back: currentView })
+                            setView({
+                                kind: "asset",
+                                id: h.id,
+                                back: currentView,
+                                neighbors: hits.data!.map((x) => x.id),
+                                index: idx,
+                            })
                         }
                     >
                         <ThumbImage assetId={h.id} size={256} mime={h.mime} alt="" />

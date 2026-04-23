@@ -8,12 +8,65 @@ import type { AlbumView } from "../../bindings/AlbumView";
 interface Props {
     id: number;
     back: View;
+    neighbors?: number[];
+    index?: number;
 }
 
-export default function AssetDetail({ id, back }: Props) {
+export default function AssetDetail({ id, back, neighbors, index }: Props) {
     const setView = useSession((s) => s.setView);
     const hiddenUnlocked = useSession((s) => s.hiddenUnlocked);
     const queryClient = useQueryClient();
+
+    const hasNeighbors = !!neighbors && typeof index === "number" && neighbors.length > 1;
+    const prevId =
+        hasNeighbors && index! > 0 ? neighbors![index! - 1] : null;
+    const nextId =
+        hasNeighbors && index! < neighbors!.length - 1
+            ? neighbors![index! + 1]
+            : null;
+
+    const goto = (targetId: number, targetIdx: number) => {
+        setView({
+            kind: "asset",
+            id: targetId,
+            back,
+            neighbors,
+            index: targetIdx,
+        });
+    };
+    const goPrev = () => {
+        if (prevId !== null) goto(prevId, index! - 1);
+    };
+    const goNext = () => {
+        if (nextId !== null) goto(nextId, index! + 1);
+    };
+
+    // Arrow-key + j/k navigation. Skip when typing in a field.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (
+                e.target instanceof HTMLInputElement ||
+                e.target instanceof HTMLTextAreaElement
+            ) {
+                return;
+            }
+            if (e.key === "ArrowLeft" || e.key === "k") {
+                e.preventDefault();
+                goPrev();
+            } else if (e.key === "ArrowRight" || e.key === "j") {
+                e.preventDefault();
+                goNext();
+            } else if (e.key === "Escape") {
+                e.preventDefault();
+                setView(back);
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+        // goto/goPrev/goNext close over the current id+index; re-register so
+        // keystrokes always step relative to the asset currently on screen.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, index, neighbors]);
 
     const { data: detail, isLoading } = useQuery({
         queryKey: ["asset-detail", id],
@@ -95,9 +148,36 @@ export default function AssetDetail({ id, back }: Props) {
             <nav className="asset-detail-nav">
                 <button onClick={() => setView(back)}>← Back</button>
                 <span className="filename">{detail.filename}</span>
+                {hasNeighbors && (
+                    <span className="asset-detail-counter">
+                        {index! + 1} of {neighbors!.length}
+                    </span>
+                )}
             </nav>
             <div className="asset-detail-body">
                 <div className="asset-image-wrap">
+                    {hasNeighbors && (
+                        <>
+                            <button
+                                className="asset-nav-chevron asset-nav-prev"
+                                onClick={goPrev}
+                                disabled={prevId === null}
+                                aria-label="Previous photo"
+                                title="Previous (←)"
+                            >
+                                ‹
+                            </button>
+                            <button
+                                className="asset-nav-chevron asset-nav-next"
+                                onClick={goNext}
+                                disabled={nextId === null}
+                                aria-label="Next photo"
+                                title="Next (→)"
+                            >
+                                ›
+                            </button>
+                        </>
+                    )}
                     {isPlayable ? (
                         originalUrl ? (
                             <video

@@ -44,7 +44,7 @@ export default function Duplicates() {
                         <span>{cluster.members.length} items</span>
                     </div>
                     <div className="ndcluster-row">
-                        {cluster.members.map((m) => (
+                        {cluster.members.map((m, idx) => (
                             <button
                                 key={m.asset_id}
                                 className={`timeline-cell${m.is_best ? " best-shot" : ""}`}
@@ -53,6 +53,8 @@ export default function Duplicates() {
                                         kind: "asset",
                                         id: m.asset_id,
                                         back: currentView,
+                                        neighbors: cluster.members.map((x) => x.asset_id),
+                                        index: idx,
                                     })
                                 }
                             >

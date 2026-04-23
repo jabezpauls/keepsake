@@ -141,7 +141,13 @@ export function CollectionView({ queryKey, fetchPage }: Props) {
             } else if (e.key === "Enter") {
                 const entry = allEntries[cursorIdx];
                 if (entry) {
-                    setView({ kind: "asset", id: entry.id, back: currentView });
+                    setView({
+                        kind: "asset",
+                        id: entry.id,
+                        back: currentView,
+                        neighbors: allEntries.map((a) => a.id),
+                        index: cursorIdx,
+                    });
                 }
             }
         };
@@ -220,6 +226,8 @@ export function CollectionView({ queryKey, fetchPage }: Props) {
                                                     kind: "asset",
                                                     id: e.id,
                                                     back: currentView,
+                                                    neighbors: allEntries.map((a) => a.id),
+                                                    index: idx,
                                                 });
                                             }}
                                         >
