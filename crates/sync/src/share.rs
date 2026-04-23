@@ -25,8 +25,8 @@
 use std::sync::Arc;
 
 use iroh_docs::api::Doc;
-use mv_core::crypto::envelope::open_row;
-use mv_core::crypto::CollectionKey;
+use mv_core::crypto::envelope::{open_row, seal_row, wrap_collection_key};
+use mv_core::crypto::{CollectionKey, MasterKey};
 use mv_core::db::queries as q;
 use mv_core::share::{
     seal_collection_for_peer, seal_collection_meta, seal_member_entry, CollectionMeta, MemberEntry,
@@ -51,6 +51,10 @@ pub struct ShareContext {
     /// context itself; callers resolve via
     /// `app/src-tauri/.../commands/albums::collection_key_for`.
     pub collection_key_bytes: [u8; 32],
+    /// Unlocked master-key bytes — used to re-wrap the collection key
+    /// for the owner after [`rotate_collection_key`]. Callers get this
+    /// from `session.user.master_key`.
+    pub master_key_bytes: [u8; 32],
 }
 
 /// Summary returned by [`publish_album_to_peer`]. Useful for audit
@@ -228,6 +232,127 @@ async fn publish_member(
     };
     let sealed = seal_member_entry(&entry, asset_id, ck)?;
     set_doc_bytes(doc, author, DocsKey::collection_member(asset_id), sealed).await?;
+    Ok(())
+}
+
+/// Write a `c/rev/<recipient>` tombstone, delete the recipient's DB
+/// wrapping, and rotate the collection key so future metadata is only
+/// readable by the remaining recipients (+ the owner).
+///
+/// **Ciphertext blobs are NOT re-encrypted.** Old CAS blobs remain
+/// decryptable by any device that already has the old collection key
+/// (the revoked peer, if they cached it). This matches the design in
+/// `plans/phase-3-peers-smart.md §3.3` — a future Phase 3.3 background
+/// worker can re-encrypt on demand; for now the practical effect is
+/// "revoked peer cannot learn about *new* members added after revoke,
+/// and cannot open *new* metadata updates".
+pub async fn revoke_peer(
+    ctx: &mut ShareContext,
+    collection_id: i64,
+    recipient_identity_pub: &[u8; 32],
+) -> Result<()> {
+    // Open (we expect this) the existing owner-side namespace.
+    let ns = ctx
+        .docs
+        .open_shared(&ctx.conn, collection_id, "owner")
+        .await?;
+
+    // Write a tombstone sealed under the *current* ck so receivers with
+    // the old key can authenticate it. Payload is a serialised
+    // timestamp — the key itself (`c/rev/<recipient>`) carries the
+    // meaning.
+    let ck_old = CollectionKey::from_bytes(ctx.collection_key_bytes);
+    let tombstone = seal_row(
+        &chrono::Utc::now().timestamp().to_be_bytes(),
+        0,
+        ck_old.as_bytes(),
+    )?;
+    set_doc_bytes(
+        &ns.doc,
+        ns.author,
+        DocsKey::collection_revocation(recipient_identity_pub),
+        tombstone,
+    )
+    .await?;
+
+    // Drop the DB wrapping for the revoked recipient.
+    {
+        let c = ctx.conn.lock().await;
+        q::delete_peer_wrapped_collection_key(
+            &c,
+            collection_id,
+            recipient_identity_pub,
+            WRAPPING_PEER,
+        )?;
+    }
+
+    // Rotate the collection key for the remaining members.
+    rotate_collection_key(ctx, collection_id).await?;
+    Ok(())
+}
+
+/// Rotate the collection key:
+///   1. Generate a fresh `CollectionKey`.
+///   2. Seal it for every remaining peer recipient and overwrite their
+///      `c/key/<pub>` entry + sender-side DB wrapping.
+///   3. Re-wrap it under the owner's master key + overwrite the
+///      `wrapping='master'` row.
+///
+/// On return, `ctx.collection_key_bytes` carries the new key so follow-up
+/// operations (e.g. meta updates) seal under the rotated key.
+///
+/// Album-password wrappings are *not* rotated here — we'd need the user's
+/// password and re-wrapping without it would break unlock. Callers must
+/// rotate password wrappings separately (future commit: surface a
+/// "rotate-with-password" command in the UI). For the C14 acceptance
+/// test, albums under test aren't password-protected.
+pub async fn rotate_collection_key(ctx: &mut ShareContext, collection_id: i64) -> Result<()> {
+    let new_ck = CollectionKey::random()?;
+
+    // Re-seal for every remaining recipient (the revoked one was
+    // already deleted from the DB, so it won't appear in the list).
+    let recipients = {
+        let c = ctx.conn.lock().await;
+        q::list_peer_wrappings_for_collection(&c, collection_id)?
+    };
+    let ns = ctx
+        .docs
+        .open_shared(&ctx.conn, collection_id, "owner")
+        .await?;
+    for (pub_bytes, _old_wrap) in recipients {
+        if pub_bytes.len() != 32 {
+            continue;
+        }
+        let mut pk = [0u8; 32];
+        pk.copy_from_slice(&pub_bytes);
+        let sealed_new = seal_collection_for_peer(&new_ck, &pk)?;
+        set_doc_bytes(
+            &ns.doc,
+            ns.author,
+            DocsKey::collection_key(&pk),
+            sealed_new.clone(),
+        )
+        .await?;
+        let c = ctx.conn.lock().await;
+        q::upsert_peer_wrapped_collection_key(&c, collection_id, &pk, WRAPPING_PEER, &sealed_new)?;
+    }
+
+    // Re-wrap for the owner under master.
+    let mk = MasterKey::from_bytes(ctx.master_key_bytes);
+    let master_wrapped = wrap_collection_key(&new_ck, &mk)?;
+    {
+        let c = ctx.conn.lock().await;
+        q::upsert_collection_key(
+            &c,
+            collection_id,
+            ctx.owner_user_id,
+            "master",
+            &master_wrapped,
+        )?;
+    }
+
+    // Swap the in-memory key so callers continue under the rotated key.
+    ctx.collection_key_bytes = *new_ck.as_bytes();
     Ok(())
 }
 

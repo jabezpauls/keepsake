@@ -464,6 +464,25 @@ pub fn list_collections_shared_to_peer(
     Ok(rows)
 }
 
+/// List every peer recipient for one collection — `(identity_pub, wrapped_key)`
+/// tuples. Used by the C10 rotate path to enumerate whom to re-seal for.
+pub fn list_peer_wrappings_for_collection(
+    conn: &Connection,
+    collection_id: i64,
+) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    let mut stmt = conn.prepare(
+        r"SELECT peer_identity_pub, wrapped_key FROM collection_key
+          WHERE collection_id = ?1
+            AND wrapping = 'peer_x25519'
+            AND peer_identity_pub IS NOT NULL
+          ORDER BY peer_identity_pub",
+    )?;
+    let rows = stmt
+        .query_map(params![collection_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 /// Delete one peer wrapping — used on revocation.
 pub fn delete_peer_wrapped_collection_key(
     conn: &Connection,
@@ -1707,8 +1726,10 @@ mod tests {
         let peer_b: [u8; 32] = [0x22; 32];
 
         // Both peers wrap cleanly, don't collide.
-        upsert_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519", b"a-sealed").unwrap();
-        upsert_peer_wrapped_collection_key(&conn, cid, &peer_b, "peer_x25519", b"b-sealed").unwrap();
+        upsert_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519", b"a-sealed")
+            .unwrap();
+        upsert_peer_wrapped_collection_key(&conn, cid, &peer_b, "peer_x25519", b"b-sealed")
+            .unwrap();
 
         // Local user wrap still lands on the same collection, distinct from
         // peer wraps — partial indexes must not cross-conflict.
@@ -1720,7 +1741,8 @@ mod tests {
         assert_eq!(got_a, b"a-sealed".to_vec());
 
         // Re-upsert updates in place.
-        upsert_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519", b"a-sealed-v2").unwrap();
+        upsert_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519", b"a-sealed-v2")
+            .unwrap();
         let got_a2 = get_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519")
             .unwrap()
             .unwrap();
@@ -1733,15 +1755,20 @@ mod tests {
         assert_eq!(shared_b, vec![(cid, b"b-sealed".to_vec())]);
 
         // Delete round-trip.
-        let removed = delete_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519").unwrap();
+        let removed =
+            delete_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519").unwrap();
         assert!(removed);
         let none = get_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519").unwrap();
         assert!(none.is_none());
         // Local wrap and peer_b wrap untouched.
-        assert!(get_collection_key(&conn, cid, uid, "master").unwrap().is_some());
-        assert!(get_peer_wrapped_collection_key(&conn, cid, &peer_b, "peer_x25519")
+        assert!(get_collection_key(&conn, cid, uid, "master")
             .unwrap()
             .is_some());
+        assert!(
+            get_peer_wrapped_collection_key(&conn, cid, &peer_b, "peer_x25519")
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[test]
