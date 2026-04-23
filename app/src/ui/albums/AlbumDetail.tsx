@@ -4,12 +4,14 @@ import { api } from "../../ipc";
 import type { ExportReport } from "../../bindings/ExportReport";
 import { CollectionView } from "../timeline/Timeline";
 import { useSession } from "../../state/session";
+import { ShareAlbumModal } from "../share";
 
 export default function AlbumDetail({ id, name }: { id: number; name: string }) {
     const setView = useSession((s) => s.setView);
     const [busy, setBusy] = useState(false);
     const [report, setReport] = useState<ExportReport | null>(null);
     const [err, setErr] = useState<string | null>(null);
+    const [showShare, setShowShare] = useState(false);
 
     const exportAlbum = async () => {
         setErr(null);
@@ -32,10 +34,18 @@ export default function AlbumDetail({ id, name }: { id: number; name: string }) 
                 <button onClick={() => setView({ kind: "albums" })}>← Albums</button>
                 <h2>{name}</h2>
                 <span className="spacer" />
+                <button onClick={() => setShowShare(true)}>Share…</button>
                 <button onClick={exportAlbum} disabled={busy}>
                     {busy ? "Exporting…" : "Export…"}
                 </button>
             </nav>
+            {showShare && (
+                <ShareAlbumModal
+                    albumId={id}
+                    albumName={name}
+                    onClose={() => setShowShare(false)}
+                />
+            )}
             {err && <p className="error">{err}</p>}
             {report && (
                 <p className="export-report">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../../ipc";
 import type { PairingTicketView } from "../../bindings/PairingTicketView";
 import type { PeerAcceptedView } from "../../bindings/PeerAcceptedView";
+import { IncomingSharesPanel } from "../share";
 
 export default function Peers() {
     const [ticket, setTicket] = useState<PairingTicketView | null>(null);
@@ -131,6 +132,8 @@ export default function Peers() {
                 {acceptErr && <p className="error">{acceptErr}</p>}
                 {acceptMsg && <p className="success">{acceptMsg}</p>}
             </section>
+
+            <IncomingSharesPanel />
 
             <section className="peers-list">
                 <h3>Paired peers</h3>

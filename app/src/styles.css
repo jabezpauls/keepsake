@@ -1133,3 +1133,187 @@ p.error {
     color: var(--muted);
     font-size: 0.85rem;
 }
+
+/* ===== Phase 3.2 share modal + incoming invites ===================== */
+
+.share-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(3px);
+}
+
+.share-modal {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    min-width: 480px;
+    max-width: 640px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.share-modal header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+
+.share-modal header h2 {
+    margin: 0;
+    font-size: 1.15rem;
+}
+
+.share-modal .close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--muted);
+}
+
+.share-modal h3 {
+    margin: 0.75rem 0 0.35rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.share-peer-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.share-peer-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.share-peer-row code {
+    font-size: 0.82rem;
+    color: var(--fg);
+}
+
+.share-peer-row .relay {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+
+.share-peer-row button.share {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0.25rem 0.8rem;
+    cursor: pointer;
+}
+
+.share-peer-row button.revoke {
+    background: transparent;
+    color: #c55;
+    border: 1px solid #c55;
+    border-radius: 4px;
+    padding: 0.25rem 0.8rem;
+    cursor: pointer;
+}
+
+.share-ticket {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-2, rgba(255, 255, 255, 0.03));
+    border-radius: 4px;
+}
+
+.share-ticket textarea {
+    width: 100%;
+    font-family: monospace;
+    font-size: 0.75rem;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 0.4rem;
+    border-radius: 4px;
+    resize: none;
+}
+
+/* Incoming-shares panel (Peers page) */
+.incoming-shares-panel {
+    padding: 1rem 0;
+    border-top: 1px solid var(--border);
+    margin-top: 1rem;
+}
+
+.incoming-shares-panel .incoming-intro {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.incoming-shares-panel textarea {
+    width: 100%;
+    font-family: monospace;
+    font-size: 0.75rem;
+    resize: vertical;
+}
+
+.incoming-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0;
+}
+
+.incoming-row {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.35rem 0;
+}
+
+.incoming-row code {
+    font-size: 0.8rem;
+}
+
+.incoming-row .state {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    padding: 0.05rem 0.4rem;
+    border-radius: 3px;
+}
+
+.incoming-row .state-pending {
+    background: rgba(200, 160, 0, 0.15);
+    color: #c8a000;
+    border: 1px solid #c8a000;
+}
+
+.incoming-row .state-accepted {
+    background: rgba(50, 170, 80, 0.15);
+    color: #3a5;
+    border: 1px solid #3a5;
+}
+
+.incoming-row .state-revoked {
+    background: rgba(200, 70, 70, 0.12);
+    color: #c55;
+    border: 1px solid #c55;
+}
+
+.incoming-row .name {
+    font-size: 0.85rem;
+    color: var(--muted);
+}
