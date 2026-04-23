@@ -217,39 +217,38 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
                     ) : detail.is_raw && showRaw && originalUrl ? (
                         <img src={originalUrl} alt={`${detail.filename} (RAW)`} />
                     ) : fullUrl ? (
-                        <img
-                            ref={imgRef}
-                            src={fullUrl}
-                            alt={detail.filename}
-                            onLoad={(e) => {
-                                const el = e.currentTarget;
-                                setImgDims({
-                                    w: el.naturalWidth,
-                                    h: el.naturalHeight,
-                                });
-                            }}
-                        />
+                        <div className="asset-image-frame">
+                            <img
+                                ref={imgRef}
+                                src={fullUrl}
+                                alt={detail.filename}
+                                onLoad={(e) => {
+                                    const el = e.currentTarget;
+                                    setImgDims({
+                                        w: el.naturalWidth,
+                                        h: el.naturalHeight,
+                                    });
+                                }}
+                            />
+                            {!isPlayable && imgDims && (
+                                <FaceOverlay
+                                    assetId={id}
+                                    imgWidth={imgDims.w}
+                                    imgHeight={imgDims.h}
+                                    visible={showFaces}
+                                    onPersonClick={(pid, pname) =>
+                                        setView({
+                                            kind: "person",
+                                            id: pid,
+                                            name: pname,
+                                        })
+                                    }
+                                />
+                            )}
+                        </div>
                     ) : (
                         <div className="thumb-loading" />
                     )}
-                    {fullUrl &&
-                        !isPlayable &&
-                        !(detail.is_raw && showRaw) &&
-                        imgDims && (
-                            <FaceOverlay
-                                assetId={id}
-                                imgWidth={imgDims.w}
-                                imgHeight={imgDims.h}
-                                visible={showFaces}
-                                onPersonClick={(pid, pname) =>
-                                    setView({
-                                        kind: "person",
-                                        id: pid,
-                                        name: pname,
-                                    })
-                                }
-                            />
-                        )}
                 </div>
                 <aside className="asset-sidebar">
                     <Row label="Type" value={detail.mime} />

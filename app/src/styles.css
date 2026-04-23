@@ -789,14 +789,27 @@ p.error {
 
 /* Face overlay on the photo viewer — Apple-Photos-style rings + name chips.
    Placed over the rendered <img>; rings are sized by % so they scale with
-   whatever size the viewer chooses to render the image at. */
+   whatever size the viewer chooses to render the image at. The frame tight-
+   wraps the <img> so inset:0 on the overlay lands exactly on the image
+   rectangle (never on the padding of .asset-image-wrap). */
+
+.asset-image-frame {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    max-height: 100%;
+    line-height: 0;
+}
+
+.asset-image-frame img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+}
 
 .face-overlay-layer {
     position: absolute;
-    top: 1rem;
-    left: 1rem;
-    right: 1rem;
-    bottom: 1rem;
+    inset: 0;
     pointer-events: none;     /* layer is click-through by default */
     z-index: 1;
 }
