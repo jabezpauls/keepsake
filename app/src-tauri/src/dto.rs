@@ -212,6 +212,7 @@ pub struct MapPoint {
 #[ts(export, export_to = "../../src/bindings/")]
 pub struct SearchRequest {
     pub text: Option<String>,
+    #[ts(type = "Array<number>")]
     pub person_ids: Vec<i64>,
     #[ts(type = "number | null")]
     pub after_day: Option<i64>,

@@ -23,7 +23,7 @@ export default function PersonDetail({
         queryFn: () =>
             api.searchAssets({
                 text: null,
-                person_ids: [BigInt(id)],
+                person_ids: [id],
                 after_day: null,
                 before_day: null,
                 source_id: null,
