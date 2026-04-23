@@ -9,7 +9,7 @@ use rusqlite::Connection;
 use crate::Result;
 
 /// Target schema version shipped by this build.
-pub const CURRENT_VERSION: i32 = 4;
+pub const CURRENT_VERSION: i32 = 5;
 
 /// Apply any migrations needed to bring `conn` up to [`CURRENT_VERSION`].
 pub fn apply(conn: &Connection) -> Result<()> {
@@ -38,6 +38,10 @@ pub fn apply(conn: &Connection) -> Result<()> {
     if version < 4 {
         conn.execute_batch(super::schema::DDL_V4)?;
         conn.pragma_update(None, "user_version", 4)?;
+    }
+    if version < 5 {
+        conn.execute_batch(super::schema::DDL_V5)?;
+        conn.pragma_update(None, "user_version", 5)?;
     }
     Ok(())
 }
@@ -156,7 +160,9 @@ mod tests {
 
         // Partial unique indexes are present.
         let idxs: Vec<String> = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='collection_key'")
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='collection_key'",
+            )
             .unwrap()
             .query_map([], |r| r.get::<_, String>(0))
             .unwrap()
@@ -164,5 +170,35 @@ mod tests {
             .unwrap();
         assert!(idxs.iter().any(|n| n == "idx_collection_key_local"));
         assert!(idxs.iter().any(|n| n == "idx_collection_key_peer"));
+    }
+
+    #[test]
+    fn v4_to_v5_creates_shared_namespace() {
+        let conn = Connection::open_in_memory().unwrap();
+        super::super::schema::init(&conn).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V2).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V3).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V4).unwrap();
+        conn.pragma_update(None, "user_version", 4_i32).unwrap();
+
+        apply(&conn).unwrap();
+
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='shared_namespace'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "shared_namespace table must exist after v5");
+
+        let idx: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_shared_namespace_ns'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx, 1);
     }
 }

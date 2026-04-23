@@ -147,8 +147,11 @@ rand = "0.8"
 
 # Phase 3.2 — album sharing over iroh. `iroh-docs` publishes per-collection
 # metadata; `iroh-blobs` serves/fetches ciphertext CAS blobs by their BLAKE3.
+# `iroh-gossip` is required transitively by iroh-docs to run its CRDT sync.
 # Pinned at the currently-latest stable lines; version trains move
-# independently (docs 0.98 lands alongside iroh 0.98; blobs is ahead at
-# 0.100). Any bump gets its own commit with verified compat.
+# independently (docs 0.98 lands alongside iroh 0.98 + gossip 0.98; blobs is
+# ahead at 0.100). Any bump gets its own commit with verified compat.
 iroh-docs = "0.98"
 iroh-blobs = "0.100"
+iroh-gossip = { version = "0.98", features = ["net"] }
+n0-future = "0.2"

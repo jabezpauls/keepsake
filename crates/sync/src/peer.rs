@@ -23,6 +23,7 @@ use mv_core::crypto::keystore::UnlockedUser;
 use mv_core::{Error, Result};
 
 use crate::blobs::BlobsBridge;
+use crate::docs::DocsBridge;
 use crate::ticket::PairingTicket;
 
 /// Config handed to [`Peer::start`]. All fields have sensible defaults so
@@ -51,6 +52,8 @@ pub struct Peer {
     /// `BlobsBridge` we've mounted. Kept behind the mutex so we can
     /// expose it from handlers without re-building.
     blobs: StdMutex<Option<Arc<BlobsBridge>>>,
+    /// `DocsBridge` we've mounted, if any.
+    docs: StdMutex<Option<Arc<DocsBridge>>>,
 }
 
 impl Peer {
@@ -85,6 +88,7 @@ impl Peer {
             relay_url: config.relay_url,
             router: StdMutex::new(None),
             blobs: StdMutex::new(None),
+            docs: StdMutex::new(None),
         })
     }
 
@@ -124,22 +128,41 @@ impl Peer {
         &self.endpoint
     }
 
-    /// Install the iroh `Router` wrapping the endpoint. Registers the
-    /// `iroh-blobs` ALPN so peers can fetch ciphertext by BLAKE3. The C7
-    /// commit extends this with the `iroh-docs` ALPN.
+    /// Install the iroh `Router` wrapping the endpoint. Registers three
+    /// ALPN handlers: `iroh-blobs` (ciphertext transport),
+    /// `iroh-gossip` (required by iroh-docs' CRDT sync), and
+    /// `iroh-docs` (the album namespaces themselves).
     ///
-    /// Idempotent — calling twice reuses the existing router + bridge.
+    /// `gossip` and `docs` are optional — passing `None` for either
+    /// keeps that leg quiet, which is how C6 booted before C7 was
+    /// wired. Callers bringing up the full share stack pass all three.
+    ///
+    /// Idempotent — calling twice reuses the existing router + bridges.
     /// Boots lazily so users who never share can skip the cost.
-    pub fn mount_router(&self, blobs: Arc<BlobsBridge>) -> Result<()> {
+    pub fn mount_router(
+        &self,
+        blobs: Arc<BlobsBridge>,
+        gossip: Option<iroh_gossip::net::Gossip>,
+        docs: Option<Arc<DocsBridge>>,
+    ) -> Result<()> {
         let mut slot = self.router.lock().expect("router mutex poisoned");
         if slot.is_some() {
             return Ok(());
         }
-        let router = Router::builder(self.endpoint.clone())
-            .accept(iroh_blobs::protocol::ALPN, blobs.protocol())
-            .spawn();
+        let mut builder = Router::builder(self.endpoint.clone())
+            .accept(iroh_blobs::protocol::ALPN, blobs.protocol());
+        if let Some(ref g) = gossip {
+            builder = builder.accept(iroh_gossip::ALPN, g.clone());
+        }
+        if let Some(ref d) = docs {
+            builder = builder.accept(iroh_docs::net::ALPN, d.protocol());
+        }
+        let router = builder.spawn();
         *slot = Some(router);
         *self.blobs.lock().expect("blobs mutex poisoned") = Some(blobs);
+        if let Some(d) = docs {
+            *self.docs.lock().expect("docs mutex poisoned") = Some(d);
+        }
         Ok(())
     }
 
@@ -147,6 +170,12 @@ impl Peer {
     /// been called.
     pub fn blobs(&self) -> Option<Arc<BlobsBridge>> {
         self.blobs.lock().expect("blobs mutex poisoned").clone()
+    }
+
+    /// The mounted `DocsBridge` if any. `None` until `mount_router` is
+    /// called with `Some(docs)`.
+    pub fn docs(&self) -> Option<Arc<DocsBridge>> {
+        self.docs.lock().expect("docs mutex poisoned").clone()
     }
 
     /// Graceful shutdown. Drops the router (which aborts the accept task)
@@ -230,9 +259,10 @@ mod tests {
                 .expect("bridge"),
         );
 
-        peer.mount_router(bridge.clone()).unwrap();
-        peer.mount_router(bridge.clone()).unwrap(); // second call no-op
+        peer.mount_router(bridge.clone(), None, None).unwrap();
+        peer.mount_router(bridge.clone(), None, None).unwrap(); // no-op
         assert!(peer.blobs().is_some());
+        assert!(peer.docs().is_none(), "docs weren't passed");
         peer.shutdown().await;
     }
 }

@@ -248,6 +248,26 @@ CREATE INDEX IF NOT EXISTS idx_asset_ciphertext_hash
     ON asset(ciphertext_blake3) WHERE ciphertext_blake3 IS NOT NULL;
 ";
 
+/// DDL v5 — Phase 3.2 (C7). Maps local `collection.id` to the iroh-docs
+/// `NamespaceId` that carries its shared metadata, plus the `AuthorId` we
+/// write as on that namespace. One row per (collection, role) pair:
+/// `role='owner'` when we created the namespace, `role='peer'` when we
+/// joined it via an incoming share. All fields are plaintext — a
+/// namespace id is a public key, and the mapping itself leaks nothing
+/// beyond "peer X has an album Y sharing something".
+pub const DDL_V5: &str = r"
+CREATE TABLE IF NOT EXISTS shared_namespace (
+    collection_id   INTEGER NOT NULL REFERENCES collection(id),
+    namespace_id    BLOB NOT NULL,
+    role            TEXT NOT NULL CHECK (role IN ('owner','peer')),
+    author_id       BLOB NOT NULL,
+    created_at      INTEGER NOT NULL,
+    PRIMARY KEY (collection_id, role)
+);
+CREATE INDEX IF NOT EXISTS idx_shared_namespace_ns
+    ON shared_namespace(namespace_id);
+";
+
 /// Set up an open SQLite connection with the Phase-1 pragmas.
 pub fn configure_connection(conn: &Connection) -> Result<()> {
     // WAL + foreign keys + synchronous=NORMAL per §4.
