@@ -6,6 +6,8 @@
 
 #![allow(dead_code, reason = "helpers used by selected integration tests")]
 
+pub mod bulk;
+
 use std::path::{Path, PathBuf};
 
 use mv_core::cas::CasStore;
