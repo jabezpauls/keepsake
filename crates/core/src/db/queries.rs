@@ -867,6 +867,45 @@ pub fn list_asset_vecs(conn: &Connection) -> Result<Vec<(i64, Vec<f32>)>> {
     Ok(rows)
 }
 
+// Sweep helpers — used by `ml::reindex` to backfill ML jobs for assets that
+// pre-date Phase 2.1 or otherwise missed the post-ingest enqueue hook.
+// Both scan plaintext tables only; no key material required.
+
+/// Assets with no row in `asset_vec` — i.e. CLIP embedding never computed.
+/// Ordered by id so progress surfaces stay stable across runs.
+pub fn sweep_assets_missing_embeddings(conn: &Connection) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        r"SELECT a.id
+          FROM asset a
+          LEFT JOIN asset_vec v ON v.asset_id = a.id
+          WHERE v.asset_id IS NULL
+          ORDER BY a.id",
+    )?;
+    let ids = stmt
+        .query_map([], |r| r.get::<_, i64>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(ids)
+}
+
+/// Assets with zero `face` rows — i.e. face detection has not run yet.
+/// Note: zero faces is indistinguishable from "was detected, no faces" in
+/// this view, which is the correct semantics for "maybe redo": a user
+/// reindex should re-scan both classes.
+pub fn sweep_assets_needing_faces(conn: &Connection) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        r"SELECT a.id
+          FROM asset a
+          LEFT JOIN face f ON f.asset_id = a.id
+          WHERE f.id IS NULL
+          GROUP BY a.id
+          ORDER BY a.id",
+    )?;
+    let ids = stmt
+        .query_map([], |r| r.get::<_, i64>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(ids)
+}
+
 fn decode_f32_vec(b: &[u8]) -> Vec<f32> {
     b.chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))

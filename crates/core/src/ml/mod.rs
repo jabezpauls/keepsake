@@ -10,6 +10,7 @@
 
 pub mod nearp;
 pub mod phash;
+pub mod reindex;
 pub mod runtime;
 
 // Phase 2.1 — feature-gated ONNX-backed pipeline. Unit-testable pieces
