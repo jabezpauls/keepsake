@@ -15,6 +15,7 @@ pub mod accept;
 pub mod blobs;
 pub mod docs;
 pub mod peer;
+pub mod receive;
 pub mod share;
 pub mod ticket;
 
@@ -22,5 +23,6 @@ pub use accept::{accept_base32, accept_ticket, forget, list_for_user};
 pub use blobs::BlobsBridge;
 pub use docs::{DocsBridge, DocsKey, SharedCollectionNamespace};
 pub use peer::{Peer, PeerConfig};
+pub use receive::{accept_namespace_ticket, spawn_receive_loop, ReceiveContext};
 pub use share::{publish_album_to_peer, ShareContext, ShareReceipt};
 pub use ticket::PairingTicket;
