@@ -232,6 +232,40 @@ impl CasStore {
         let aa = &hash_hex[..2];
         self.cas_dir().join(aa).join(hash_hex)
     }
+
+    /// Return the on-disk path of the ciphertext file backing `cas_ref`,
+    /// plus its size in bytes. Exposed for the Phase-3.2 iroh-blobs
+    /// bridge, which content-addresses ciphertext by its own BLAKE3 (the
+    /// CAS `cas_ref` is the BLAKE3 of the plaintext, a different hash).
+    ///
+    /// **Does not decrypt.** Callers reading the returned path see the
+    /// full `MVV1` + secretstream wire format from architecture.md §2.4.
+    pub fn open_ciphertext_path(&self, cas_ref: &str) -> Result<(PathBuf, u64)> {
+        let path = self.blob_path(cas_ref);
+        let meta = std::fs::metadata(&path)?;
+        Ok((path, meta.len()))
+    }
+
+    /// Compute the BLAKE3 hash of the on-disk ciphertext for `cas_ref`.
+    /// This is what iroh-blobs indexes by. Cheap-ish (sequential hash of a
+    /// file that already lives in page cache after ingest), but still
+    /// work the caller must do explicitly — we don't re-hash on every
+    /// request.
+    pub fn compute_ciphertext_blake3(&self, cas_ref: &str) -> Result<[u8; 32]> {
+        use std::io::Read;
+        let (path, _) = self.open_ciphertext_path(cas_ref)?;
+        let mut f = std::fs::File::open(path)?;
+        let mut hasher = blake3::Hasher::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = f.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok(*hasher.finalize().as_bytes())
+    }
 }
 
 // =========== TESTS ============================================================
@@ -240,6 +274,38 @@ impl CasStore {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn open_ciphertext_path_returns_on_disk_bytes() {
+        let (tmp, store) = mk_store();
+        let _ = tmp;
+        let fk = FileKey::random().unwrap();
+        let (cas_ref, _) = store.put_streaming(std::io::Cursor::new(b"hello world"), &fk).unwrap();
+        let (path, size) = store.open_ciphertext_path(&cas_ref).unwrap();
+        assert!(path.exists());
+        assert!(size > 0);
+
+        // The ciphertext hash computes deterministically.
+        let ct_hash = store.compute_ciphertext_blake3(&cas_ref).unwrap();
+        // Must differ from the plaintext BLAKE3 (cas_ref) — ciphertext has
+        // the MVV1 magic + random nonce + AEAD overhead.
+        let plain_bytes = hex::decode(&cas_ref).unwrap();
+        assert_ne!(
+            ct_hash.to_vec(),
+            plain_bytes,
+            "ciphertext hash must differ from plaintext cas_ref hash"
+        );
+        // Recomputing gives the same bytes.
+        assert_eq!(ct_hash, store.compute_ciphertext_blake3(&cas_ref).unwrap());
+    }
+
+    #[test]
+    fn open_ciphertext_path_missing_is_error() {
+        let (tmp, store) = mk_store();
+        let _ = tmp;
+        let r = store.open_ciphertext_path(&"0".repeat(64));
+        assert!(r.is_err(), "missing cas_ref must error");
+    }
 
     fn mk_store() -> (TempDir, CasStore) {
         let dir = TempDir::new().unwrap();
