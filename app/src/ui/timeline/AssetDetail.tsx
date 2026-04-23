@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+    keepPreviousData,
+    useQuery,
+    useQueryClient,
+} from "@tanstack/react-query";
 import { api, bytesToBlobUrl } from "../../ipc";
 import type { View } from "../../state/session";
 import { useSession } from "../../state/session";
@@ -75,6 +79,7 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
     const { data: detail, isLoading } = useQuery({
         queryKey: ["asset-detail", id],
         queryFn: () => api.assetDetail(id),
+        placeholderData: keepPreviousData,
     });
 
     const { data: albums = [] } = useQuery<AlbumView[]>({
@@ -82,28 +87,51 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
         queryFn: () => api.listAlbums(hiddenUnlocked),
     });
 
+    // Cache thumb bytes per asset so arrow-key navigation doesn't blank the
+    // viewer between assets. `keepPreviousData` shows the last asset's bytes
+    // while the new one is in flight.
+    const thumbQuery = useQuery({
+        queryKey: ["asset-thumb-1024", id],
+        queryFn: () => api.assetThumbnail(id, 1024),
+        placeholderData: keepPreviousData,
+        staleTime: 5 * 60_000,
+    });
+
     const [fullUrl, setFullUrl] = useState<string | null>(null);
     useEffect(() => {
-        if (!detail) return;
-        let url: string | null = null;
-        let cancelled = false;
-        setImgDims(null);                       // reset for new asset
-        void (async () => {
-            try {
-                const bytes = await api.assetThumbnail(id, 1024);
-                if (cancelled) return;
-                url = bytesToBlobUrl(bytes, "image/webp");
-                setFullUrl(url);
-            } catch {
-                /* fall back silently */
-            }
-        })();
-        return () => {
-            cancelled = true;
-            if (url) URL.revokeObjectURL(url);
-            setFullUrl(null);
-        };
-    }, [id, detail]);
+        const bytes = thumbQuery.data;
+        if (!bytes) return;
+        const url = bytesToBlobUrl(bytes, "image/webp");
+        setFullUrl(url);
+        return () => URL.revokeObjectURL(url);
+    }, [thumbQuery.data]);
+
+    // Reset natural-dimension state when the asset changes so the face
+    // overlay doesn't draw over the previous image's geometry.
+    useEffect(() => {
+        setImgDims(null);
+    }, [id]);
+
+    // Prefetch the immediate neighbours so arrow-keying feels instant.
+    useEffect(() => {
+        for (const nid of [prevId, nextId]) {
+            if (nid === null) continue;
+            queryClient.prefetchQuery({
+                queryKey: ["asset-thumb-1024", nid],
+                queryFn: () => api.assetThumbnail(nid, 1024),
+                staleTime: 5 * 60_000,
+            });
+            queryClient.prefetchQuery({
+                queryKey: ["asset-detail", nid],
+                queryFn: () => api.assetDetail(nid),
+            });
+            queryClient.prefetchQuery({
+                queryKey: ["asset-faces", nid],
+                queryFn: () => api.assetFaces(nid),
+                staleTime: 60_000,
+            });
+        }
+    }, [prevId, nextId, queryClient]);
 
     // Criterion 9 surfaces. Two optional paths:
     // 1. For video-mime assets (including Live / Motion Photos whose MOV
