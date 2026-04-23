@@ -35,6 +35,10 @@ pub struct SearchQuery {
     pub camera_make: Option<String>,
     pub lens: Option<String>,
     pub limit: u32,
+    /// Forwarded to [`AssetFilter::hidden_vault_unlocked`]. Default `false`
+    /// hides hidden-vault members; flip to `true` only when the hidden
+    /// gesture has been satisfied.
+    pub hidden_vault_unlocked: bool,
 }
 
 /// A single search hit. Ordered; caller iterates in order.
@@ -73,6 +77,9 @@ pub fn search(
         // We fetch more than `limit` up-front because post-filters may reject
         // some, but we still cap in the DB to avoid pulling 100k rows.
         limit: Some(limit_hint),
+        // Plumbed through in a later commit; until then search retains the
+        // safe-default hide posture (architecture.md §9).
+        hidden_vault_unlocked: q.hidden_vault_unlocked,
     };
     let mut candidates = db::filter_assets(conn, &base_filter)?;
 

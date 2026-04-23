@@ -1108,7 +1108,32 @@ pub struct AssetFilter {
     pub is_screenshot: Option<bool>,
     pub is_live: Option<bool>,
     pub limit: Option<u32>,
+    /// When false (the default), assets whose *only* collection membership is
+    /// a `kind='hidden_vault'` row are excluded from the result. When true,
+    /// the filter is lifted — UI layers must flip this explicitly after the
+    /// hidden-vault gesture unlocks the user's hidden vault. Architecture.md
+    /// §9 plausible-deniability requires the default to be "hide".
+    pub hidden_vault_unlocked: bool,
 }
+
+/// SQL fragment that hides any asset whose collection membership includes a
+/// `kind='hidden_vault'` row. Bound parameter-free so both [`filter_assets`]
+/// and [`list_assets_with_gps`] can splice it in without reshuffling their
+/// arg lists. Safe as a string — `kind` is a constant literal, not input.
+///
+/// Semantics (per architecture.md §9 plausible-deniability): an asset that
+/// lives in the hidden vault must not surface *anywhere* — timeline, map,
+/// search — unless the hidden gesture has been satisfied. Cross-listing
+/// (hidden + default album) still hides, because revealing the asset by any
+/// route leaks the hidden vault's existence.
+const HIDDEN_VAULT_EXCLUSION: &str = r"
+    AND NOT EXISTS (
+        SELECT 1
+        FROM collection_member cm
+        JOIN collection c ON c.id = cm.collection_id
+        WHERE cm.asset_id = asset.id
+          AND c.kind = 'hidden_vault'
+    )";
 
 pub fn filter_assets(conn: &Connection, f: &AssetFilter) -> Result<Vec<AssetLite>> {
     let mut sql = String::from(
@@ -1145,6 +1170,9 @@ pub fn filter_assets(conn: &Connection, f: &AssetFilter) -> Result<Vec<AssetLite
     if let Some(v) = f.is_live {
         sql.push_str(" AND is_live = ?");
         args.push((v as i64).into());
+    }
+    if !f.hidden_vault_unlocked {
+        sql.push_str(HIDDEN_VAULT_EXCLUSION);
     }
     sql.push_str(" ORDER BY COALESCE(taken_at_utc_day, 0) DESC, id DESC");
     if let Some(v) = f.limit {
@@ -1237,6 +1265,9 @@ pub fn list_assets_with_gps(
     if let Some(v) = f.source_id {
         sql.push_str(" AND source_id = ?");
         args.push(v.into());
+    }
+    if !f.hidden_vault_unlocked {
+        sql.push_str(HIDDEN_VAULT_EXCLUSION);
     }
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt

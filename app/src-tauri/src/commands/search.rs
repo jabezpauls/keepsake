@@ -51,6 +51,9 @@ async fn search_assets_impl(state: &AppState, req: SearchRequest) -> AppResult<V
             camera_make: req.camera_make,
             lens: req.lens,
             limit: req.limit.clamp(1, 500),
+            // Threading the session's hidden-unlock flag lands in the next
+            // commit (C5); hold the safe default here per architecture.md §9.
+            hidden_vault_unlocked: false,
         };
         // Runtime may be `None` (off-flag build or models not loaded yet).
         // `search()` handles that case and falls back to date-ordered hits.
