@@ -87,6 +87,25 @@ impl MlRuntime {
     pub fn provider_label(&self) -> &'static str {
         "disabled"
     }
+
+    /// Session accessors for external callers (examples, downstream evals).
+    /// Returned handles are cheap `SharedSession` clones.
+    #[cfg(feature = "ml-models")]
+    pub fn clip_visual(&self) -> super::loader::SharedSession {
+        self.sessions.clip_visual.clone()
+    }
+    #[cfg(feature = "ml-models")]
+    pub fn clip_textual(&self) -> super::loader::SharedSession {
+        self.sessions.clip_textual.clone()
+    }
+    #[cfg(feature = "ml-models")]
+    pub fn scrfd(&self) -> super::loader::SharedSession {
+        self.sessions.scrfd.clone()
+    }
+    #[cfg(feature = "ml-models")]
+    pub fn arcface(&self) -> super::loader::SharedSession {
+        self.sessions.arcface.clone()
+    }
 }
 
 /// Every kind of work the ML worker pool can run.
