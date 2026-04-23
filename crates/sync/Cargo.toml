@@ -24,6 +24,10 @@ iroh-base.workspace = true
 ed25519-dalek.workspace = true
 rand.workspace = true
 
+# Phase 3.2 — album sharing.
+iroh-docs.workspace = true
+iroh-blobs.workspace = true
+
 base32.workspace = true
 hex.workspace = true
 chrono.workspace = true

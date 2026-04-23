@@ -144,3 +144,11 @@ iroh = "0.98"
 iroh-base = "0.98"
 ed25519-dalek = "2"
 rand = "0.8"
+
+# Phase 3.2 — album sharing over iroh. `iroh-docs` publishes per-collection
+# metadata; `iroh-blobs` serves/fetches ciphertext CAS blobs by their BLAKE3.
+# Pinned at the currently-latest stable lines; version trains move
+# independently (docs 0.98 lands alongside iroh 0.98; blobs is ahead at
+# 0.100). Any bump gets its own commit with verified compat.
+iroh-docs = "0.98"
+iroh-blobs = "0.100"
