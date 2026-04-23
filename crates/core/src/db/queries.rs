@@ -404,6 +404,112 @@ pub fn upsert_collection_key(
     Ok(())
 }
 
+/// Upsert a peer-wrapped collection key (Phase 3.2). `peer_identity_pub` is
+/// the recipient's 32-byte X25519 public key; `wrapped_key` is the output of
+/// `envelope::seal_for_peer(CollectionKey.as_bytes(), ...)`. `user_id` is
+/// NULL for peer wrappings — the partial unique index keeps the
+/// `(collection_id, peer_identity_pub, wrapping)` invariant.
+pub fn upsert_peer_wrapped_collection_key(
+    conn: &Connection,
+    collection_id: i64,
+    peer_identity_pub: &[u8],
+    wrapping: &str,
+    wrapped_key: &[u8],
+) -> Result<()> {
+    conn.execute(
+        r"INSERT INTO collection_key
+              (collection_id, user_id, peer_identity_pub, wrapping, wrapped_key)
+          VALUES (?1, NULL, ?2, ?3, ?4)
+          ON CONFLICT(collection_id, peer_identity_pub, wrapping)
+              WHERE peer_identity_pub IS NOT NULL
+              DO UPDATE SET wrapped_key = excluded.wrapped_key",
+        params![collection_id, peer_identity_pub, wrapping, wrapped_key],
+    )?;
+    Ok(())
+}
+
+/// Lookup the peer-wrapped collection key for one `(collection, peer)` pair.
+pub fn get_peer_wrapped_collection_key(
+    conn: &Connection,
+    collection_id: i64,
+    peer_identity_pub: &[u8],
+    wrapping: &str,
+) -> Result<Option<Vec<u8>>> {
+    conn.query_row(
+        r"SELECT wrapped_key FROM collection_key
+          WHERE collection_id = ?1
+            AND peer_identity_pub = ?2
+            AND wrapping = ?3",
+        params![collection_id, peer_identity_pub, wrapping],
+        |r| r.get::<_, Vec<u8>>(0),
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+/// List every `(collection_id, wrapped_key)` tuple shared to this peer.
+/// Used by the Phase-3.2 receive loop to enumerate pending incoming shares.
+pub fn list_collections_shared_to_peer(
+    conn: &Connection,
+    peer_identity_pub: &[u8],
+) -> Result<Vec<(i64, Vec<u8>)>> {
+    let mut stmt = conn.prepare(
+        r"SELECT collection_id, wrapped_key FROM collection_key
+          WHERE peer_identity_pub = ?1 AND wrapping = 'peer_x25519'
+          ORDER BY collection_id",
+    )?;
+    let rows = stmt
+        .query_map(params![peer_identity_pub], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Delete one peer wrapping — used on revocation.
+pub fn delete_peer_wrapped_collection_key(
+    conn: &Connection,
+    collection_id: i64,
+    peer_identity_pub: &[u8],
+    wrapping: &str,
+) -> Result<bool> {
+    let n = conn.execute(
+        r"DELETE FROM collection_key
+          WHERE collection_id = ?1
+            AND peer_identity_pub = ?2
+            AND wrapping = ?3",
+        params![collection_id, peer_identity_pub, wrapping],
+    )?;
+    Ok(n > 0)
+}
+
+/// Populate `asset.ciphertext_blake3` once. Used by the iroh-blobs bridge
+/// the first time it needs to announce this asset's ciphertext.
+pub fn set_ciphertext_blake3(
+    conn: &Connection,
+    asset_id: i64,
+    ciphertext_blake3: &[u8; 32],
+) -> Result<()> {
+    conn.execute(
+        "UPDATE asset SET ciphertext_blake3 = ?1 WHERE id = ?2",
+        params![&ciphertext_blake3[..], asset_id],
+    )?;
+    Ok(())
+}
+
+/// Lookup the asset_id for a given ciphertext-BLAKE3 — reverse map used by
+/// the bridge when a peer requests a blob by its ciphertext hash.
+pub fn asset_id_for_ciphertext_blake3(
+    conn: &Connection,
+    ciphertext_blake3: &[u8],
+) -> Result<Option<i64>> {
+    conn.query_row(
+        "SELECT id FROM asset WHERE ciphertext_blake3 = ?1",
+        params![ciphertext_blake3],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
 pub fn get_collection_key(
     conn: &Connection,
     collection_id: i64,
@@ -1566,6 +1672,106 @@ mod tests {
         assert_eq!(get_phash(&conn, id).unwrap(), Some(0x1234_5678_9ABC_DEF0));
         let list = list_phashes(&conn).unwrap();
         assert_eq!(list, vec![(id, 0x1234_5678_9ABC_DEF0)]);
+    }
+
+    #[test]
+    fn peer_wrapped_collection_key_round_trip() {
+        let conn = open_mem();
+        let (uid, _sid) = seed_user_and_source(&conn);
+
+        // Seed a collection so the FK is happy.
+        let name = mv_core_seal_helper(b"shared", 0, &[0x42; 32]);
+        let cid = insert_collection(&conn, uid, "album", &name, false, None, 0).unwrap();
+
+        let peer_a: [u8; 32] = [0x11; 32];
+        let peer_b: [u8; 32] = [0x22; 32];
+
+        // Both peers wrap cleanly, don't collide.
+        upsert_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519", b"a-sealed").unwrap();
+        upsert_peer_wrapped_collection_key(&conn, cid, &peer_b, "peer_x25519", b"b-sealed").unwrap();
+
+        // Local user wrap still lands on the same collection, distinct from
+        // peer wraps — partial indexes must not cross-conflict.
+        upsert_collection_key(&conn, cid, uid, "master", b"master-wrap").unwrap();
+
+        let got_a = get_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519")
+            .unwrap()
+            .expect("peer_a row present");
+        assert_eq!(got_a, b"a-sealed".to_vec());
+
+        // Re-upsert updates in place.
+        upsert_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519", b"a-sealed-v2").unwrap();
+        let got_a2 = get_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519")
+            .unwrap()
+            .unwrap();
+        assert_eq!(got_a2, b"a-sealed-v2".to_vec());
+
+        // list_collections_shared_to_peer surfaces only this peer's wraps.
+        let shared_a = list_collections_shared_to_peer(&conn, &peer_a).unwrap();
+        assert_eq!(shared_a, vec![(cid, b"a-sealed-v2".to_vec())]);
+        let shared_b = list_collections_shared_to_peer(&conn, &peer_b).unwrap();
+        assert_eq!(shared_b, vec![(cid, b"b-sealed".to_vec())]);
+
+        // Delete round-trip.
+        let removed = delete_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519").unwrap();
+        assert!(removed);
+        let none = get_peer_wrapped_collection_key(&conn, cid, &peer_a, "peer_x25519").unwrap();
+        assert!(none.is_none());
+        // Local wrap and peer_b wrap untouched.
+        assert!(get_collection_key(&conn, cid, uid, "master").unwrap().is_some());
+        assert!(get_peer_wrapped_collection_key(&conn, cid, &peer_b, "peer_x25519")
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn ciphertext_blake3_round_trip() {
+        let conn = open_mem();
+        let (_uid, sid) = seed_user_and_source(&conn);
+        let mut hash = [0u8; 32];
+        hash[0] = 7;
+        let a = AssetInsert {
+            blake3_plaintext: &hash,
+            mime: "image/jpeg",
+            bytes: 1,
+            width: None,
+            height: None,
+            duration_ms: None,
+            taken_at_utc_day: None,
+            is_video: false,
+            is_raw: false,
+            is_screenshot: false,
+            is_live: false,
+            is_motion: false,
+            source_id: sid,
+            cas_ref: "x",
+            imported_at: 0,
+            filename_ct: b"f",
+            taken_at_utc_ct: None,
+            gps_ct: None,
+            device_ct: None,
+            lens_ct: None,
+            exif_all_ct: None,
+            wrapped_file_key: b"w",
+        };
+        let id = match insert_asset_if_new(&conn, &a).unwrap() {
+            InsertResult::Inserted(x) | InsertResult::Existing(x) => x,
+        };
+
+        let ct_hash = [0xABu8; 32];
+        set_ciphertext_blake3(&conn, id, &ct_hash).unwrap();
+        let got = asset_id_for_ciphertext_blake3(&conn, &ct_hash).unwrap();
+        assert_eq!(got, Some(id));
+
+        // Unknown hash returns None.
+        let none = asset_id_for_ciphertext_blake3(&conn, &[0xCDu8; 32]).unwrap();
+        assert!(none.is_none());
+    }
+
+    /// Wrap the seal_row helper in a closure so the test above can build a
+    /// name_ct without pulling envelope imports at the module level.
+    fn mv_core_seal_helper(plain: &[u8], row_id: u64, key: &[u8; 32]) -> Vec<u8> {
+        crate::crypto::seal_row(plain, row_id, key).unwrap()
     }
 
     #[test]
