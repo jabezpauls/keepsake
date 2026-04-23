@@ -9,7 +9,7 @@ use rusqlite::Connection;
 use crate::Result;
 
 /// Target schema version shipped by this build.
-pub const CURRENT_VERSION: i32 = 5;
+pub const CURRENT_VERSION: i32 = 6;
 
 /// Apply any migrations needed to bring `conn` up to [`CURRENT_VERSION`].
 pub fn apply(conn: &Connection) -> Result<()> {
@@ -42,6 +42,10 @@ pub fn apply(conn: &Connection) -> Result<()> {
     if version < 5 {
         conn.execute_batch(super::schema::DDL_V5)?;
         conn.pragma_update(None, "user_version", 5)?;
+    }
+    if version < 6 {
+        conn.execute_batch(super::schema::DDL_V6)?;
+        conn.pragma_update(None, "user_version", 6)?;
     }
     Ok(())
 }
@@ -200,5 +204,26 @@ mod tests {
             )
             .unwrap();
         assert_eq!(idx, 1);
+    }
+
+    #[test]
+    fn v5_to_v6_creates_share_status() {
+        let conn = Connection::open_in_memory().unwrap();
+        super::super::schema::init(&conn).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V2).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V3).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V4).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V5).unwrap();
+        conn.pragma_update(None, "user_version", 5_i32).unwrap();
+
+        apply(&conn).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='share_status'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1);
     }
 }

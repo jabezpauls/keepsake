@@ -106,7 +106,8 @@ pub async fn publish_album_to_peer(
 
     // 3. Mirror the wrapping on the sender side so `list_album_shares`
     //    can enumerate recipients out of the DB without re-reading the
-    //    namespace. Ignore the return — idempotent upsert.
+    //    namespace. Ignore the return — idempotent upsert. Also log
+    //    the share_status transition for the audit ledger.
     {
         let c = ctx.conn.lock().await;
         q::upsert_peer_wrapped_collection_key(
@@ -115,6 +116,13 @@ pub async fn publish_album_to_peer(
             recipient_identity_pub,
             WRAPPING_PEER,
             &sealed_key,
+        )?;
+        q::record_share_status(
+            &c,
+            collection_id,
+            recipient_identity_pub,
+            q::SHARE_STATUS_ACTIVE,
+            chrono::Utc::now().timestamp(),
         )?;
     }
 
@@ -276,7 +284,8 @@ pub async fn revoke_peer(
     )
     .await?;
 
-    // Drop the DB wrapping for the revoked recipient.
+    // Drop the DB wrapping for the revoked recipient + log the
+    // transition.
     {
         let c = ctx.conn.lock().await;
         q::delete_peer_wrapped_collection_key(
@@ -284,6 +293,13 @@ pub async fn revoke_peer(
             collection_id,
             recipient_identity_pub,
             WRAPPING_PEER,
+        )?;
+        q::record_share_status(
+            &c,
+            collection_id,
+            recipient_identity_pub,
+            q::SHARE_STATUS_REVOKED,
+            chrono::Utc::now().timestamp(),
         )?;
     }
 
@@ -336,6 +352,13 @@ pub async fn rotate_collection_key(ctx: &mut ShareContext, collection_id: i64) -
         .await?;
         let c = ctx.conn.lock().await;
         q::upsert_peer_wrapped_collection_key(&c, collection_id, &pk, WRAPPING_PEER, &sealed_new)?;
+        q::record_share_status(
+            &c,
+            collection_id,
+            &pk,
+            q::SHARE_STATUS_ROTATED,
+            chrono::Utc::now().timestamp(),
+        )?;
     }
 
     // Re-wrap for the owner under master.

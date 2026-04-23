@@ -500,6 +500,44 @@ pub fn delete_peer_wrapped_collection_key(
     Ok(n > 0)
 }
 
+/// Append a `share_status` ledger row. Constants for `status` are
+/// `SHARE_STATUS_ACTIVE` / `SHARE_STATUS_REVOKED` / `SHARE_STATUS_ROTATED`.
+pub fn record_share_status(
+    conn: &Connection,
+    collection_id: i64,
+    peer_identity_pub: &[u8],
+    status: &str,
+    changed_at: i64,
+) -> Result<()> {
+    conn.execute(
+        r"INSERT INTO share_status (collection_id, peer_identity_pub, status, changed_at)
+          VALUES (?1, ?2, ?3, ?4)",
+        params![collection_id, peer_identity_pub, status, changed_at],
+    )?;
+    Ok(())
+}
+
+/// List every `share_status` row for a collection, newest first.
+pub fn list_share_status_for_collection(
+    conn: &Connection,
+    collection_id: i64,
+) -> Result<Vec<(Vec<u8>, String, i64)>> {
+    let mut stmt = conn.prepare(
+        r"SELECT peer_identity_pub, status, changed_at FROM share_status
+          WHERE collection_id = ?1 ORDER BY changed_at DESC",
+    )?;
+    let rows = stmt
+        .query_map(params![collection_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub const SHARE_STATUS_ACTIVE: &str = "active";
+pub const SHARE_STATUS_REVOKED: &str = "revoked";
+pub const SHARE_STATUS_ROTATED: &str = "rotated";
+
 /// Populate `asset.ciphertext_blake3` once. Used by the iroh-blobs bridge
 /// the first time it needs to announce this asset's ciphertext.
 pub fn set_ciphertext_blake3(

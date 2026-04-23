@@ -268,6 +268,25 @@ CREATE INDEX IF NOT EXISTS idx_shared_namespace_ns
     ON shared_namespace(namespace_id);
 ";
 
+/// DDL v6 — Phase 3.2 (C14). Audit ledger for every share-status
+/// transition: publish → 'active', revoke → 'revoked', rotate →
+/// 'rotated'. Plaintext by design: `peer_identity_pub` is already a
+/// public value and timestamps leak no subject-matter metadata.
+/// Multi-row per (collection, peer) — new row per transition so the
+/// UI can render "shared then revoked at T+5d" timelines.
+pub const DDL_V6: &str = r"
+CREATE TABLE IF NOT EXISTS share_status (
+    id                 INTEGER PRIMARY KEY,
+    collection_id      INTEGER NOT NULL REFERENCES collection(id),
+    peer_identity_pub  BLOB NOT NULL,
+    status             TEXT NOT NULL
+        CHECK (status IN ('active','revoked','rotated')),
+    changed_at         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_share_status_col
+    ON share_status(collection_id, changed_at DESC);
+";
+
 /// Set up an open SQLite connection with the Phase-1 pragmas.
 pub fn configure_connection(conn: &Connection) -> Result<()> {
     // WAL + foreign keys + synchronous=NORMAL per §4.
