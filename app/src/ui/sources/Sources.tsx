@@ -71,15 +71,20 @@ function AddSourceForm({ onAdded }: { onAdded: () => void }) {
                 <span>Name</span>
                 <input value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
             </label>
-            <label>
-                <span>Folder</span>
+            <div className="field">
+                <label htmlFor="source-folder">Folder</label>
                 <div className="folder-row">
-                    <input value={root} onChange={(e) => setRoot(e.target.value)} disabled={busy} />
+                    <input
+                        id="source-folder"
+                        value={root}
+                        onChange={(e) => setRoot(e.target.value)}
+                        disabled={busy}
+                    />
                     <button type="button" onClick={pickFolder} disabled={busy}>
                         Browse…
                     </button>
                 </div>
-            </label>
+            </div>
             <label>
                 <span>Adapter</span>
                 <select

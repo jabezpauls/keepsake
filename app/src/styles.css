@@ -69,6 +69,18 @@ label > span {
     color: var(--muted);
 }
 
+/* Composite fields where the label needs an explicit `htmlFor` because
+ * multiple controls share the same descriptor. Matches the `label` layout. */
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+}
+.field > label {
+    color: var(--muted);
+}
+
 p.error {
     color: var(--error);
     font-size: 0.9rem;

@@ -104,6 +104,20 @@ test("create user → add source → timeline → album export", async ({ page }
                 case "lock":
                     state.session = null;
                     return null;
+                case "ml_status":
+                    return {
+                        models_available: false,
+                        runtime_loaded: false,
+                        execution_provider: "disabled",
+                        pending: 0,
+                        running: 0,
+                        done: 0,
+                        failed: 0,
+                    };
+                case "ml_models_enabled":
+                    return false;
+                case "ml_reindex":
+                    return { embed_queued: 0, detect_queued: 0, assets_touched: 0 };
                 default:
                     throw new Error(`mock: unhandled ${cmd}`);
             }
@@ -137,7 +151,12 @@ test("create user → add source → timeline → album export", async ({ page }
     // Add a source.
     await page.getByRole("button", { name: "Sources" }).click();
     await page.getByLabel("Name").fill("Test");
-    await page.getByLabel("Folder").fill("/tmp/nonexistent");
+    // `getByLabel("Folder")` matches both the source-folder input and the
+    // Adapter <select> (whose options include "Generic folder"). Use the
+    // exact role+name locator so strict mode picks just the path input.
+    await page
+        .getByRole("textbox", { name: "Folder", exact: true })
+        .fill("/tmp/nonexistent");
     await page.getByRole("button", { name: "Add source" }).click();
     await expect(page.getByText("Test", { exact: true })).toBeVisible();
 
