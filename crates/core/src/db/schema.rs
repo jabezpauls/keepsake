@@ -195,6 +195,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_location_path_hash
     WHERE path_hash IS NOT NULL;
 ";
 
+/// DDL v3 — Phase 3.1 additive migration. Adds `peer_accept`, the plaintext
+/// table of accepted peer identities. `peer_node_id` is plaintext per
+/// architecture.md §9 (an attacker with vault access already sees which
+/// peers you collaborate with; the bigger leak is in file metadata). The
+/// optional note is master-key sealed.
+pub const DDL_V3: &str = r"
+CREATE TABLE IF NOT EXISTS peer_accept (
+    peer_node_id      BLOB PRIMARY KEY,
+    peer_identity_pub BLOB NOT NULL,
+    owner_user_id     INTEGER NOT NULL REFERENCES user(id),
+    relay_url         TEXT,
+    added_at          INTEGER NOT NULL,
+    note_ct           BLOB
+);
+CREATE INDEX IF NOT EXISTS idx_peer_accept_owner
+    ON peer_accept(owner_user_id, added_at DESC);
+";
+
 /// Set up an open SQLite connection with the Phase-1 pragmas.
 pub fn configure_connection(conn: &Connection) -> Result<()> {
     // WAL + foreign keys + synchronous=NORMAL per §4.

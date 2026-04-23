@@ -9,7 +9,7 @@ use rusqlite::Connection;
 use crate::Result;
 
 /// Target schema version shipped by this build.
-pub const CURRENT_VERSION: i32 = 2;
+pub const CURRENT_VERSION: i32 = 3;
 
 /// Apply any migrations needed to bring `conn` up to [`CURRENT_VERSION`].
 pub fn apply(conn: &Connection) -> Result<()> {
@@ -30,6 +30,10 @@ pub fn apply(conn: &Connection) -> Result<()> {
     if version < 2 {
         conn.execute_batch(super::schema::DDL_V2)?;
         conn.pragma_update(None, "user_version", 2)?;
+    }
+    if version < 3 {
+        conn.execute_batch(super::schema::DDL_V3)?;
+        conn.pragma_update(None, "user_version", 3)?;
     }
     Ok(())
 }
@@ -86,5 +90,23 @@ mod tests {
             .collect::<rusqlite::Result<_>>()
             .unwrap();
         assert!(cols.iter().any(|c| c == "path_hash"));
+    }
+
+    #[test]
+    fn v2_to_v3_creates_peer_accept() {
+        let conn = Connection::open_in_memory().unwrap();
+        super::super::schema::init(&conn).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V2).unwrap();
+        conn.pragma_update(None, "user_version", 2_i32).unwrap();
+
+        apply(&conn).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='peer_accept'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1);
     }
 }

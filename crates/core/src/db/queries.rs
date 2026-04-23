@@ -894,6 +894,87 @@ pub fn sweep_assets_missing_embeddings(conn: &Connection) -> Result<Vec<i64>> {
     Ok(ids)
 }
 
+// --------- PEER_ACCEPT (Phase 3.1) -------------------------------------------
+
+/// One accepted peer — matches `peer_accept` DDL in schema.rs v3.
+#[derive(Debug, Clone)]
+pub struct PeerAcceptRow {
+    /// 32-byte Ed25519 iroh node public key.
+    pub peer_node_id: Vec<u8>,
+    /// 32-byte X25519 identity public key (libsodium sealed-box recipient).
+    pub peer_identity_pub: Vec<u8>,
+    /// Which local user accepted this peer. Keeps Phase-3.3 multi-user
+    /// scoping honest.
+    pub owner_user_id: i64,
+    /// Optional relay URL the remote advertised. `None` means LAN-only.
+    pub relay_url: Option<String>,
+    pub added_at: i64,
+    /// Optional user note, sealed with the owner's masterKey. Opaque to
+    /// anyone else.
+    pub note_ct: Option<Vec<u8>>,
+}
+
+/// Insert or update a peer-accept row by `peer_node_id`. Idempotent: re-
+/// accepting the same ticket just refreshes `added_at`.
+pub fn upsert_peer_accept(conn: &Connection, row: &PeerAcceptRow) -> Result<()> {
+    conn.execute(
+        r"INSERT INTO peer_accept
+              (peer_node_id, peer_identity_pub, owner_user_id, relay_url, added_at, note_ct)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+          ON CONFLICT(peer_node_id) DO UPDATE SET
+              peer_identity_pub = excluded.peer_identity_pub,
+              owner_user_id     = excluded.owner_user_id,
+              relay_url         = excluded.relay_url,
+              added_at          = excluded.added_at,
+              note_ct           = excluded.note_ct",
+        params![
+            row.peer_node_id,
+            row.peer_identity_pub,
+            row.owner_user_id,
+            row.relay_url,
+            row.added_at,
+            row.note_ct,
+        ],
+    )?;
+    Ok(())
+}
+
+/// List peers accepted by `owner_user_id`, newest-first.
+pub fn list_peer_accepts(conn: &Connection, owner_user_id: i64) -> Result<Vec<PeerAcceptRow>> {
+    let mut stmt = conn.prepare(
+        r"SELECT peer_node_id, peer_identity_pub, owner_user_id, relay_url, added_at, note_ct
+          FROM peer_accept
+          WHERE owner_user_id = ?1
+          ORDER BY added_at DESC",
+    )?;
+    let rows = stmt
+        .query_map(params![owner_user_id], |r| {
+            Ok(PeerAcceptRow {
+                peer_node_id: r.get(0)?,
+                peer_identity_pub: r.get(1)?,
+                owner_user_id: r.get(2)?,
+                relay_url: r.get(3)?,
+                added_at: r.get(4)?,
+                note_ct: r.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Forget a peer. Returns whether a row was actually removed.
+pub fn delete_peer_accept(
+    conn: &Connection,
+    owner_user_id: i64,
+    peer_node_id: &[u8],
+) -> Result<bool> {
+    let n = conn.execute(
+        "DELETE FROM peer_accept WHERE owner_user_id = ?1 AND peer_node_id = ?2",
+        params![owner_user_id, peer_node_id],
+    )?;
+    Ok(n > 0)
+}
+
 /// Assets with zero `face` rows — i.e. face detection has not run yet.
 /// Note: zero faces is indistinguishable from "was detected, no faces" in
 /// this view, which is the correct semantics for "maybe redo": a user
@@ -1480,6 +1561,49 @@ mod tests {
         assert_eq!(get_phash(&conn, id).unwrap(), Some(0x1234_5678_9ABC_DEF0));
         let list = list_phashes(&conn).unwrap();
         assert_eq!(list, vec![(id, 0x1234_5678_9ABC_DEF0)]);
+    }
+
+    #[test]
+    fn peer_accept_crud_round_trip() {
+        let conn = open_mem();
+        let (uid, _sid) = seed_user_and_source(&conn);
+        let row = PeerAcceptRow {
+            peer_node_id: vec![0x11; 32],
+            peer_identity_pub: vec![0x22; 32],
+            owner_user_id: uid,
+            relay_url: Some("https://relay.example".into()),
+            added_at: 1000,
+            note_ct: None,
+        };
+        upsert_peer_accept(&conn, &row).unwrap();
+
+        let listed = list_peer_accepts(&conn, uid).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].peer_node_id, row.peer_node_id);
+        assert_eq!(
+            listed[0].relay_url.as_deref(),
+            Some("https://relay.example")
+        );
+
+        // Idempotent upsert — updates added_at.
+        let mut newer = row.clone();
+        newer.added_at = 2000;
+        newer.relay_url = None;
+        upsert_peer_accept(&conn, &newer).unwrap();
+        let listed2 = list_peer_accepts(&conn, uid).unwrap();
+        assert_eq!(listed2.len(), 1, "upsert must not duplicate");
+        assert_eq!(listed2[0].added_at, 2000);
+        assert!(listed2[0].relay_url.is_none());
+
+        // Other user sees no peers.
+        let empty = list_peer_accepts(&conn, uid + 99).unwrap();
+        assert!(empty.is_empty());
+
+        // Delete round-trip.
+        let removed = delete_peer_accept(&conn, uid, &row.peer_node_id).unwrap();
+        assert!(removed);
+        let removed_again = delete_peer_accept(&conn, uid, &row.peer_node_id).unwrap();
+        assert!(!removed_again, "double-delete is a no-op");
     }
 
     #[test]
