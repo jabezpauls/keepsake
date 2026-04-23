@@ -41,8 +41,12 @@ async fn two_peers_exchange_tickets_end_to_end() {
 
     // Boot two real peers — each binds its own ephemeral UDP port on
     // 127.0.0.1 with RelayMode::Disabled.
-    let peer_a = Peer::start(&unlocked_a, PeerConfig::default()).await.unwrap();
-    let peer_b = Peer::start(&unlocked_b, PeerConfig::default()).await.unwrap();
+    let peer_a = Peer::start(&unlocked_a, PeerConfig::default())
+        .await
+        .unwrap();
+    let peer_b = Peer::start(&unlocked_b, PeerConfig::default())
+        .await
+        .unwrap();
 
     // A issues a ticket → B accepts.
     let seed_a = *unlocked_a.iroh_node.secret_bytes();

@@ -121,8 +121,7 @@ mod tests {
     fn fresh_user() -> UnlockedUser {
         mv_core::crypto::init().unwrap();
         let (_record, unlocked) =
-            keystore::create_user("peer-test", &SecretString::from("very-long-pw-xyz"))
-                .unwrap();
+            keystore::create_user("peer-test", &SecretString::from("very-long-pw-xyz")).unwrap();
         unlocked
     }
 

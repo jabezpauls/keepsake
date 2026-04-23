@@ -95,10 +95,11 @@ impl PairingTicket {
             &self.relay_url,
             self.timestamp,
         )?;
-        let vk = VerifyingKey::from_bytes(&self.iroh_node_pub)
-            .map_err(|_| Error::TicketSignature)?;
+        let vk =
+            VerifyingKey::from_bytes(&self.iroh_node_pub).map_err(|_| Error::TicketSignature)?;
         let sig = Signature::from_bytes(&self.signature);
-        vk.verify(&pre_sig, &sig).map_err(|_| Error::TicketSignature)
+        vk.verify(&pre_sig, &sig)
+            .map_err(|_| Error::TicketSignature)
     }
 
     /// Serialise to the frozen wire layout (pre-base32).
@@ -124,7 +125,8 @@ impl PairingTicket {
         let mut cur = Cursor::new(bytes);
 
         let mut ver = [0u8; 1];
-        cur.read_exact(&mut ver).map_err(|_| Error::TicketFormat("read version"))?;
+        cur.read_exact(&mut ver)
+            .map_err(|_| Error::TicketFormat("read version"))?;
         if ver[0] != TICKET_VERSION {
             return Err(Error::TicketFormat("unsupported version"));
         }
@@ -181,7 +183,10 @@ impl PairingTicket {
     /// Media Vault ticket (prefix `mvv1...` is implied because the version
     /// byte is first — base32 of 0x01 is always `ae`).
     pub fn to_base32(&self) -> String {
-        base32::encode(base32::Alphabet::Rfc4648Lower { padding: false }, &self.to_bytes())
+        base32::encode(
+            base32::Alphabet::Rfc4648Lower { padding: false },
+            &self.to_bytes(),
+        )
     }
 
     /// Decode a base32 ticket string. Does NOT verify — call `verify()`.
@@ -246,8 +251,13 @@ mod tests {
     #[test]
     fn round_trip_with_relay_url() {
         let url = "https://relay.example.com:4443".to_string();
-        let t = PairingTicket::sign(&fake_signing_key(), &fake_identity_pub(), url.clone(), 12345)
-            .unwrap();
+        let t = PairingTicket::sign(
+            &fake_signing_key(),
+            &fake_identity_pub(),
+            url.clone(),
+            12345,
+        )
+        .unwrap();
         t.verify().unwrap();
         let back = PairingTicket::from_bytes(&t.to_bytes()).unwrap();
         assert_eq!(back.relay_url, url);
@@ -294,9 +304,8 @@ mod tests {
 
     #[test]
     fn truncated_ticket_fails_format() {
-        let t =
-            PairingTicket::sign(&fake_signing_key(), &fake_identity_pub(), String::new(), 0)
-                .unwrap();
+        let t = PairingTicket::sign(&fake_signing_key(), &fake_identity_pub(), String::new(), 0)
+            .unwrap();
         let wire = t.to_bytes();
         let r = PairingTicket::from_bytes(&wire[..wire.len() - 1]);
         assert!(matches!(r, Err(Error::TicketFormat(_))));
@@ -304,9 +313,8 @@ mod tests {
 
     #[test]
     fn trailing_bytes_fail_format() {
-        let t =
-            PairingTicket::sign(&fake_signing_key(), &fake_identity_pub(), String::new(), 0)
-                .unwrap();
+        let t = PairingTicket::sign(&fake_signing_key(), &fake_identity_pub(), String::new(), 0)
+            .unwrap();
         let mut wire = t.to_bytes();
         wire.push(0xAB);
         let r = PairingTicket::from_bytes(&wire);
@@ -315,9 +323,8 @@ mod tests {
 
     #[test]
     fn wrong_version_is_rejected() {
-        let t =
-            PairingTicket::sign(&fake_signing_key(), &fake_identity_pub(), String::new(), 0)
-                .unwrap();
+        let t = PairingTicket::sign(&fake_signing_key(), &fake_identity_pub(), String::new(), 0)
+            .unwrap();
         let mut wire = t.to_bytes();
         wire[0] = 0x02;
         let r = PairingTicket::from_bytes(&wire);
@@ -349,9 +356,13 @@ mod tests {
     fn stable_known_vector_signing() {
         // Deterministic key + fields → identical bytes across runs. Locks
         // the wire layout against accidental drift.
-        let t =
-            PairingTicket::sign(&[0x11; SECRET_KEY_LENGTH], &[0x22; X25519_PUB_LEN], "r".into(), 7)
-                .unwrap();
+        let t = PairingTicket::sign(
+            &[0x11; SECRET_KEY_LENGTH],
+            &[0x22; X25519_PUB_LEN],
+            "r".into(),
+            7,
+        )
+        .unwrap();
         let base32 = t.to_base32();
         // Byte-length check is the sturdiest regression catch — hash pinning
         // would fight ed25519-dalek randomness noise; byte count is purely
