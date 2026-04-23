@@ -197,6 +197,22 @@ pub struct PersonView {
     pub cover_asset_id: Option<i64>,
 }
 
+/// One detected face within a single asset, for the viewer face overlay.
+///
+/// `bbox` is xywh in thumb1024 pixel space (same coord space the viewer
+/// renders from), so the client scales to % for CSS positioning.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct AssetFaceView {
+    #[ts(type = "number")]
+    pub face_id: i64,
+    #[ts(type = "number | null")]
+    pub person_id: Option<i64>,
+    pub person_name: Option<String>,
+    pub bbox: [f32; 4],
+    pub quality: f32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
 pub struct MapPoint {

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, bytesToBlobUrl } from "../../ipc";
 import type { View } from "../../state/session";
 import { useSession } from "../../state/session";
 import type { AlbumView } from "../../bindings/AlbumView";
+import FaceOverlay from "./FaceOverlay";
 
 interface Props {
     id: number;
@@ -59,6 +60,9 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
             } else if (e.key === "Escape") {
                 e.preventDefault();
                 setView(back);
+            } else if (e.key === "f" || e.key === "F") {
+                e.preventDefault();
+                setShowFaces((v) => !v);
             }
         };
         window.addEventListener("keydown", onKey);
@@ -83,6 +87,7 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
         if (!detail) return;
         let url: string | null = null;
         let cancelled = false;
+        setImgDims(null);                       // reset for new asset
         void (async () => {
             try {
                 const bytes = await api.assetThumbnail(id, 1024);
@@ -109,6 +114,9 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
     //    link in that case).
     const [showRaw, setShowRaw] = useState(false);
     const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+    const [showFaces, setShowFaces] = useState(true);
+    const imgRef = useRef<HTMLImageElement | null>(null);
+    const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
     const isPlayable =
         !!detail && (detail.is_video || detail.mime.startsWith("video/"));
     useEffect(() => {
@@ -153,6 +161,20 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
                         {index! + 1} of {neighbors!.length}
                     </span>
                 )}
+                {!isPlayable && (
+                    <button
+                        className={`face-toggle${showFaces ? " on" : ""}`}
+                        onClick={() => setShowFaces((v) => !v)}
+                        title={
+                            showFaces
+                                ? "Hide face overlays (F)"
+                                : "Show face overlays (F)"
+                        }
+                        aria-pressed={showFaces}
+                    >
+                        Faces {showFaces ? "on" : "off"}
+                    </button>
+                )}
             </nav>
             <div className="asset-detail-body">
                 <div className="asset-image-wrap">
@@ -195,10 +217,39 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
                     ) : detail.is_raw && showRaw && originalUrl ? (
                         <img src={originalUrl} alt={`${detail.filename} (RAW)`} />
                     ) : fullUrl ? (
-                        <img src={fullUrl} alt={detail.filename} />
+                        <img
+                            ref={imgRef}
+                            src={fullUrl}
+                            alt={detail.filename}
+                            onLoad={(e) => {
+                                const el = e.currentTarget;
+                                setImgDims({
+                                    w: el.naturalWidth,
+                                    h: el.naturalHeight,
+                                });
+                            }}
+                        />
                     ) : (
                         <div className="thumb-loading" />
                     )}
+                    {fullUrl &&
+                        !isPlayable &&
+                        !(detail.is_raw && showRaw) &&
+                        imgDims && (
+                            <FaceOverlay
+                                assetId={id}
+                                imgWidth={imgDims.w}
+                                imgHeight={imgDims.h}
+                                visible={showFaces}
+                                onPersonClick={(pid, pname) =>
+                                    setView({
+                                        kind: "person",
+                                        id: pid,
+                                        name: pname,
+                                    })
+                                }
+                            />
+                        )}
                 </div>
                 <aside className="asset-sidebar">
                     <Row label="Type" value={detail.mime} />

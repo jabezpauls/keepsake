@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type { AlbumView } from "./bindings/AlbumView";
 export type { AssetDetailView } from "./bindings/AssetDetailView";
+export type { AssetFaceView } from "./bindings/AssetFaceView";
 export type { ExportOptions } from "./bindings/ExportOptions";
 export type { ExportReport } from "./bindings/ExportReport";
 export type { GpsView } from "./bindings/GpsView";
@@ -27,6 +28,7 @@ export type { TimelinePage } from "./bindings/TimelinePage";
 
 import type { AlbumView } from "./bindings/AlbumView";
 import type { AssetDetailView } from "./bindings/AssetDetailView";
+import type { AssetFaceView } from "./bindings/AssetFaceView";
 import type { ExportOptions } from "./bindings/ExportOptions";
 import type { ExportReport } from "./bindings/ExportReport";
 import type { IngestStatus } from "./bindings/IngestStatus";
@@ -117,6 +119,8 @@ export const api = {
         invoke<number>("split_person", { sourcePerson, faceIds }),
     personFaceThumbnail: (personId: number, size: number) =>
         invoke<number[]>("person_face_thumbnail", { personId, size }),
+    assetFaces: (assetId: number) =>
+        invoke<AssetFaceView[]>("asset_faces", { assetId }),
 
     // --- search ---------------------------------------------------------
     searchAssets: (request: SearchRequest) =>

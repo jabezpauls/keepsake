@@ -1248,6 +1248,26 @@ pub fn list_faces_for_person(conn: &Connection, person_id: i64) -> Result<Vec<Fa
     Ok(rows)
 }
 
+pub fn list_faces_for_asset(conn: &Connection, asset_id: i64) -> Result<Vec<FaceRow>> {
+    let mut stmt = conn.prepare(
+        r"SELECT id, asset_id, person_id, quality, bbox_ct, embedding_ct
+          FROM face WHERE asset_id = ?1 ORDER BY quality DESC NULLS LAST, id",
+    )?;
+    let rows = stmt
+        .query_map(params![asset_id], |r| {
+            Ok(FaceRow {
+                id: r.get(0)?,
+                asset_id: r.get(1)?,
+                person_id: r.get(2)?,
+                quality: r.get(3)?,
+                bbox_ct: r.get(4)?,
+                embedding_ct: r.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 pub fn list_all_faces(conn: &Connection) -> Result<Vec<FaceRow>> {
     let mut stmt =
         conn.prepare(r"SELECT id, asset_id, person_id, quality, bbox_ct, embedding_ct FROM face")?;

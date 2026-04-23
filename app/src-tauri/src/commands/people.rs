@@ -4,12 +4,14 @@
 //! rebuild-clusters trigger. Detection + embedding run off the `ml-models`
 //! feature flag (Step 4) — this module only manages the schema side.
 
+use std::collections::HashMap;
+
 use mv_core::crypto::{open_row, seal_row, unwrap_file_key};
 use mv_core::db;
 use mv_core::media::crop_face_webp;
 use tauri::State;
 
-use crate::dto::PersonView;
+use crate::dto::{AssetFaceView, PersonView};
 use crate::errors::{wire, AppError, AppResult};
 use crate::state::AppState;
 
@@ -226,6 +228,83 @@ async fn person_face_thumbnail_impl(
             Ok(bytes) => Ok(bytes),
             Err(_) => Ok(thumb_bytes),
         }
+    })
+    .await
+    .map_err(AppError::from)?
+}
+
+/// Return every detected face on an asset, with the person name decrypted
+/// server-side. Consumed by the photo-viewer face overlay to render rings +
+/// clickable chips. Bboxes are in thumb1024 pixel space (where detection ran).
+#[tauri::command]
+pub async fn asset_faces(
+    state: State<'_, AppState>,
+    asset_id: i64,
+) -> Result<Vec<AssetFaceView>, String> {
+    wire(asset_faces_impl(&state, asset_id).await)
+}
+
+async fn asset_faces_impl(
+    state: &AppState,
+    asset_id: i64,
+) -> AppResult<Vec<AssetFaceView>> {
+    let (db_handle, user_id, ck) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (
+            s.db.clone(),
+            s.user.user_id,
+            s.default_collection_key.clone(),
+        )
+    };
+
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<AssetFaceView>> {
+        let guard = db_handle.blocking_lock();
+        let faces = db::list_faces_for_asset(&guard, asset_id)?;
+        if faces.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // One list_persons call + in-memory name decrypt covers every name
+        // this asset could need (typical ≤ 5 persons), avoiding a per-face
+        // round-trip.
+        let persons = db::list_persons(&guard, user_id, /* include_hidden */ true)?;
+        let mut name_by_person: HashMap<i64, String> = HashMap::new();
+        for p in persons {
+            if let Some(name_ct) = &p.name_ct {
+                if let Ok(bytes) = open_row(name_ct, 0, ck.as_bytes()) {
+                    if let Ok(s) = String::from_utf8(bytes) {
+                        name_by_person.insert(p.id, s);
+                    }
+                }
+            }
+        }
+
+        let mut out = Vec::with_capacity(faces.len());
+        for f in faces {
+            // bbox: 4 × f32 LE; skip malformed rows defensively.
+            let Ok(bbox_plain) = open_row(&f.bbox_ct, asset_id as u64, ck.as_bytes()) else {
+                continue;
+            };
+            if bbox_plain.len() != 16 {
+                continue;
+            }
+            let bbox: [f32; 4] = [
+                f32::from_le_bytes(bbox_plain[0..4].try_into().unwrap()),
+                f32::from_le_bytes(bbox_plain[4..8].try_into().unwrap()),
+                f32::from_le_bytes(bbox_plain[8..12].try_into().unwrap()),
+                f32::from_le_bytes(bbox_plain[12..16].try_into().unwrap()),
+            ];
+            let person_name = f.person_id.and_then(|pid| name_by_person.get(&pid).cloned());
+            out.push(AssetFaceView {
+                face_id: f.id,
+                person_id: f.person_id,
+                person_name,
+                bbox,
+                quality: f.quality.unwrap_or(0.0) as f32,
+            });
+        }
+        Ok(out)
     })
     .await
     .map_err(AppError::from)?

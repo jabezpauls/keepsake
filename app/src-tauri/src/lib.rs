@@ -54,6 +54,7 @@ pub fn run() {
             commands::people::merge_people,
             commands::people::split_person,
             commands::people::person_face_thumbnail,
+            commands::people::asset_faces,
             commands::search::search_assets,
             commands::map::map_points,
             commands::nearp::near_dup_rebuild,
