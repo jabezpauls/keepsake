@@ -15,11 +15,7 @@ use crate::Result;
 /// Enqueue the standard post-ingest ML jobs for `asset_id`. Returns the
 /// number of jobs actually inserted (0, 1, or 2 depending on existing dedupe
 /// state) so callers can log queue growth during bulk operations.
-pub fn enqueue_post_ingest(
-    conn: &rusqlite::Connection,
-    asset_id: i64,
-    now: i64,
-) -> Result<u32> {
+pub fn enqueue_post_ingest(conn: &rusqlite::Connection, asset_id: i64, now: i64) -> Result<u32> {
     let mut inserted = 0u32;
     if enqueue_dedup(conn, "embed_asset", asset_id, now)? {
         inserted += 1;
@@ -35,12 +31,7 @@ pub fn enqueue_post_ingest(
 /// `enqueue_ml_job` returns the same id regardless of whether the row was
 /// new or pre-existing, so we fingerprint by sampling the pending-kind count
 /// before and after.
-fn enqueue_dedup(
-    conn: &rusqlite::Connection,
-    kind: &str,
-    asset_id: i64,
-    now: i64,
-) -> Result<bool> {
+fn enqueue_dedup(conn: &rusqlite::Connection, kind: &str, asset_id: i64, now: i64) -> Result<bool> {
     let before: i64 = conn.query_row(
         r"SELECT COUNT(*) FROM ml_job WHERE kind = ?1 AND asset_id = ?2",
         rusqlite::params![kind, asset_id],

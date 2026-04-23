@@ -51,7 +51,9 @@ pub fn generate_synthetic_library(
         let mut hash = [0u8; 32];
         let h = (seed as u64).wrapping_mul(i as u64 + 1);
         hash[..8].copy_from_slice(&h.to_le_bytes());
-        hash[8..16].copy_from_slice(&(rng.next() as u64 + rng.next() as u64 * (u32::MAX as u64 + 1)).to_le_bytes());
+        hash[8..16].copy_from_slice(
+            &(rng.next() as u64 + rng.next() as u64 * (u32::MAX as u64 + 1)).to_le_bytes(),
+        );
 
         let r = rng.next();
         let day = 18000 + (r % 1200) as i64;

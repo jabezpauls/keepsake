@@ -50,12 +50,7 @@ pub fn reindex_all(conn: &rusqlite::Connection, now: i64) -> Result<ReindexRepor
 /// Enqueue and report whether the row actually landed (true = new,
 /// false = dedupe). Counts before/after since `enqueue_ml_job` returns the
 /// same id whether it wrote or matched an existing row.
-fn enqueue_new(
-    conn: &rusqlite::Connection,
-    kind: &str,
-    asset_id: i64,
-    now: i64,
-) -> Result<bool> {
+fn enqueue_new(conn: &rusqlite::Connection, kind: &str, asset_id: i64, now: i64) -> Result<bool> {
     let before: i64 = conn.query_row(
         r"SELECT COUNT(*) FROM ml_job WHERE kind = ?1 AND asset_id = ?2",
         rusqlite::params![kind, asset_id],

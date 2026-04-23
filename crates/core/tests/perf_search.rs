@@ -29,12 +29,8 @@ const LIMIT: u32 = 50;
 fn perf_search_50k_cold_warm_slos() {
     let vault = Vault::create("very-long-password-xyz");
     let t_seed = Instant::now();
-    let ids = bulk::generate_synthetic_library(
-        &vault.conn,
-        vault.source_id,
-        TARGET_ASSETS,
-        0x5EA_5EA,
-    );
+    let ids =
+        bulk::generate_synthetic_library(&vault.conn, vault.source_id, TARGET_ASSETS, 0x5EA_5EA);
     // Populate asset_vec for half the library so the runtime-less search
     // still has rows to count against `list_asset_vecs` during re-rank
     // (the re-rank path is no-op here, but the upsert happens at ingest
@@ -54,7 +50,8 @@ fn perf_search_50k_cold_warm_slos() {
     // TempDir alive (via _tmp) through the reopen — only the Connection
     // gets dropped.
     let db_path = vault.tmp.path().join("index.db");
-    let vault_ck = mv_core::crypto::CollectionKey::from_bytes(*vault.default_collection_key.as_bytes());
+    let vault_ck =
+        mv_core::crypto::CollectionKey::from_bytes(*vault.default_collection_key.as_bytes());
     let Vault { tmp, conn, .. } = vault;
     let _tmp = tmp;
     drop(conn);

@@ -42,7 +42,13 @@ fn near_dup_set_yields_five_clusters() {
 
     // Every cluster must have exactly 3 members and the canonical membership
     // sets must match. Normalize by sorting each inner vec + the outer list.
-    let mut sorted: Vec<Vec<i64>> = groups.into_iter().map(|mut c| { c.sort(); c }).collect();
+    let mut sorted: Vec<Vec<i64>> = groups
+        .into_iter()
+        .map(|mut c| {
+            c.sort();
+            c
+        })
+        .collect();
     sorted.sort_by_key(|c| c[0]);
 
     let expected: Vec<Vec<i64>> = vec![

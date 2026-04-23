@@ -22,8 +22,16 @@ fn hidden_vault_assets_are_excluded_by_default() {
 
     // Create a hidden-vault collection and add `hidden` to it.
     let hv_name = mv_core::crypto::seal_row(b"Vault", 0, vault.user.master_key.as_bytes()).unwrap();
-    let hv_id = db::insert_collection(conn, vault.user_id, "hidden_vault", &hv_name, false, None, 0)
-        .unwrap();
+    let hv_id = db::insert_collection(
+        conn,
+        vault.user_id,
+        "hidden_vault",
+        &hv_name,
+        false,
+        None,
+        0,
+    )
+    .unwrap();
     db::add_to_collection(conn, hv_id, hidden, 0).unwrap();
 
     // Locked (default): hidden is excluded everywhere.
