@@ -115,6 +115,10 @@ pub fn try_bootstrap_runtime(session: &Session, vault_root: &Path) {
         };
         match mv_core::ml::MlRuntime::load(cfg) {
             Ok(rt) => {
+                tracing::info!(
+                    provider = %rt.provider_label(),
+                    "ml runtime loaded"
+                );
                 let arc = Arc::new(rt);
                 *session.ml_runtime.lock().unwrap() = Some(arc.clone());
                 // Share the same runtime with the drain worker so it can run
@@ -139,7 +143,7 @@ pub fn try_bootstrap_runtime(session: &Session, vault_root: &Path) {
                     }));
             }
             Err(e) => {
-                tracing::info!(
+                tracing::warn!(
                     ?e,
                     "ml runtime did not load — search + worker keep metadata-only fallbacks"
                 );
