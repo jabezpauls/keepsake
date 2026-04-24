@@ -7,6 +7,7 @@ use mv_core::analytics::trips::{detect_trips, GeoPoint, TripParams};
 use mv_core::crypto::envelope::{open_row, seal_row};
 use mv_core::crypto::CollectionKey;
 use mv_core::db::queries as q;
+use mv_core::geocode::Geocoder;
 use tauri::State;
 
 use crate::dto::TripView;
@@ -62,16 +63,25 @@ async fn detect_trips_run_impl(state: &AppState) -> AppResult<u32> {
         q::delete_trips_for_user(&guard, user_id)?;
         let trips = detect_trips(&pts, TripParams::default());
 
+        let geocoder = Geocoder::new();
         let now = chrono::Utc::now().timestamp();
         for t in &trips {
-            // Placeholder name: "Trip · N photos, <start_day>..<end_day>".
-            // D2 (reverse geocoding) swaps this for "<place>, <date>".
-            let label = format!(
-                "Trip · {} photos · day {}..{}",
-                t.member_asset_ids.len(),
-                t.start_day,
-                t.end_day,
-            );
+            // Name "{City}, {Country} · {start_date}..{end_date}" when
+            // the centroid resolves to a known place; otherwise fall
+            // back to the coordinate-only label.
+            let place = geocoder.reverse(t.centroid_lat, t.centroid_lon);
+            let date_range = format_day_range(t.start_day, t.end_day);
+            let label = match place {
+                Some(p) if p.city == p.region || p.region.is_empty() => {
+                    format!("{}, {} · {}", p.city, p.country, date_range)
+                }
+                Some(p) => format!("{}, {} · {}", p.city, p.country, date_range),
+                None => format!(
+                    "Trip · {} photos · {}",
+                    t.member_asset_ids.len(),
+                    date_range
+                ),
+            };
             let name_ct = seal_row(label.as_bytes(), 0, ck.as_bytes())?;
             let cid = q::insert_collection(&guard, user_id, "trip", &name_ct, false, None, now)?;
             for aid in &t.member_asset_ids {
@@ -122,4 +132,24 @@ async fn list_trips_impl(state: &AppState) -> AppResult<Vec<TripView>> {
     })
     .await
     .map_err(AppError::from)?
+}
+
+/// Render a `days-since-epoch` pair as "Jan 3 → Jan 10, 2024". Falls
+/// back to raw day numbers if the conversion overflows.
+fn format_day_range(start_day: i64, end_day: i64) -> String {
+    use chrono::{Datelike, Days, NaiveDate};
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+    let Some(s) = epoch.checked_add_days(Days::new(start_day.max(0) as u64)) else {
+        return format!("day {start_day}..{end_day}");
+    };
+    let Some(e) = epoch.checked_add_days(Days::new(end_day.max(0) as u64)) else {
+        return format!("day {start_day}..{end_day}");
+    };
+    if s == e {
+        s.format("%b %-d, %Y").to_string()
+    } else if s.year() == e.year() {
+        format!("{} → {}", s.format("%b %-d"), e.format("%b %-d, %Y"))
+    } else {
+        format!("{} → {}", s.format("%b %-d, %Y"), e.format("%b %-d, %Y"))
+    }
 }

@@ -8,6 +8,7 @@ pub mod cas;
 pub mod crypto;
 pub mod db;
 pub mod error;
+pub mod geocode;
 pub mod ingest;
 pub mod media;
 pub mod ml;
