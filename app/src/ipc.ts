@@ -191,6 +191,23 @@ export const api = {
     acceptIncomingShare: (namespaceTicketBase32: string) =>
         invoke<number>("accept_incoming_share", { namespaceTicketBase32 }),
 
+    // --- public share-links (D7) ---------------------------------------
+    createPublicLink: (
+        collectionId: number,
+        password: string | null,
+        expiresAt: number | null,
+    ) =>
+        invoke<import("./bindings/PublicLinkView").PublicLinkView>(
+            "create_public_link",
+            { collectionId, password, expiresAt },
+        ),
+    listPublicLinks: () =>
+        invoke<import("./bindings/PublicLinkView").PublicLinkView[]>(
+            "list_public_links",
+        ),
+    revokePublicLink: (id: number) =>
+        invoke<boolean>("revoke_public_link", { id }),
+
     // --- analytics (Phase 3.3+) ----------------------------------------
     detectTripsRun: () => invoke<number>("detect_trips_run"),
     listTrips: () => invoke<TripView[]>("list_trips"),

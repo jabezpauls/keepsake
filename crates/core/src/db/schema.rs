@@ -287,6 +287,34 @@ CREATE INDEX IF NOT EXISTS idx_share_status_col
     ON share_status(collection_id, changed_at DESC);
 ";
 
+/// DDL v8 — Phase 3 (D7). Public share links. Each row authorises one
+/// URL of the form `https://<host>/s/<pub_id>[#<secret_b64>]` to
+/// render a collection through a browser viewer. `wrapped_key` holds
+/// the Argon2id-wrapped viewer key when `has_password = 1`; when
+/// `has_password = 0` the viewer key travels in the URL fragment
+/// and this column is empty.
+///
+/// `expires_at` is enforced at read time — a revoked or expired row
+/// never serves content. Revocation drops the row outright so the
+/// hosting peer stops accepting the pub_id.
+pub const DDL_V8: &str = r"
+CREATE TABLE IF NOT EXISTS public_link (
+    id               INTEGER PRIMARY KEY,
+    collection_id    INTEGER NOT NULL REFERENCES collection(id),
+    owner_id         INTEGER NOT NULL REFERENCES user(id),
+    pub_id           BLOB NOT NULL UNIQUE,       -- 16 random bytes, base32 in URL
+    has_password     INTEGER NOT NULL DEFAULT 0,
+    password_salt    BLOB,                       -- 16 bytes Argon2id salt when has_password=1
+    wrapped_key      BLOB,                       -- Argon2id-sealed viewer key when has_password=1
+    expires_at       INTEGER,                    -- UNIX seconds; NULL = never
+    created_at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_public_link_owner
+    ON public_link(owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_public_link_collection
+    ON public_link(collection_id);
+";
+
 /// DDL v7 — Phase 3 (D4). Smart albums: rule-compiled collections whose
 /// membership is materialised on demand (not auto-reindexed on every
 /// ingest). Additive only.

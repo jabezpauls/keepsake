@@ -149,6 +149,8 @@ export default function ShareAlbumModal({ albumId, albumName, onClose }: Props) 
                     </section>
                 )}
 
+                <PublicLinksPanel albumId={albumId} />
+
                 {(shareMut.isError || revokeMut.isError) && (
                     <p className="error">
                         {String(shareMut.error ?? revokeMut.error)}
@@ -156,5 +158,138 @@ export default function ShareAlbumModal({ albumId, albumName, onClose }: Props) 
                 )}
             </div>
         </div>
+    );
+}
+
+function PublicLinksPanel({ albumId }: { albumId: number }) {
+    const queryClient = useQueryClient();
+    const links = useQuery({
+        queryKey: ["public-links"],
+        queryFn: api.listPublicLinks,
+    });
+    const forThisAlbum = (links.data ?? []).filter(
+        (l) => l.collection_id === albumId,
+    );
+    const [password, setPassword] = useState("");
+    const [expiry, setExpiry] = useState<"never" | "7d" | "30d">("never");
+    const [lastCreated, setLastCreated] = useState<
+        import("../../bindings/PublicLinkView").PublicLinkView | null
+    >(null);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState<string | null>(null);
+
+    const create = async () => {
+        setBusy(true);
+        setErr(null);
+        try {
+            const now = Math.floor(Date.now() / 1000);
+            const expiresAt =
+                expiry === "never"
+                    ? null
+                    : expiry === "7d"
+                      ? now + 7 * 86400
+                      : now + 30 * 86400;
+            const link = await api.createPublicLink(
+                albumId,
+                password.trim() || null,
+                expiresAt,
+            );
+            setLastCreated(link);
+            setPassword("");
+            await queryClient.invalidateQueries({ queryKey: ["public-links"] });
+        } catch (e) {
+            setErr(String(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const revoke = async (id: number) => {
+        if (!window.confirm("Revoke this link? Anyone already holding it will lose access immediately.")) {
+            return;
+        }
+        await api.revokePublicLink(id);
+        if (lastCreated?.id === id) setLastCreated(null);
+        await queryClient.invalidateQueries({ queryKey: ["public-links"] });
+    };
+
+    const hostBase = "https://<your-relay>/s/";
+    const urlFor = (link: import("../../bindings/PublicLinkView").PublicLinkView) =>
+        link.url_fragment
+            ? `${hostBase}${link.pub_id_b32}#${link.url_fragment}`
+            : `${hostBase}${link.pub_id_b32}`;
+
+    return (
+        <section className="public-links">
+            <h3>Public link</h3>
+            <p className="muted">
+                Anyone with the URL (and password, if set) can view this album
+                through the browser viewer. The viewer itself is a follow-up
+                slice — the hosting peer's HTTP gateway isn't wired yet, so
+                treat these as placeholders for now.
+            </p>
+            <div className="public-links-create">
+                <input
+                    type="password"
+                    placeholder="Password (optional)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={busy}
+                />
+                <select
+                    value={expiry}
+                    onChange={(e) => setExpiry(e.target.value as "never" | "7d" | "30d")}
+                    disabled={busy}
+                >
+                    <option value="never">Never expires</option>
+                    <option value="7d">Expires in 7 days</option>
+                    <option value="30d">Expires in 30 days</option>
+                </select>
+                <button onClick={create} disabled={busy}>
+                    {busy ? "Creating…" : "Create link"}
+                </button>
+            </div>
+            {err && <p className="error">{err}</p>}
+            {lastCreated && (
+                <div className="public-link-new">
+                    <strong>New link (copy now — fragment is not recoverable):</strong>
+                    <textarea readOnly rows={3} value={urlFor(lastCreated)} onFocus={(e) => e.currentTarget.select()} />
+                    <button
+                        onClick={() => {
+                            void navigator.clipboard.writeText(urlFor(lastCreated));
+                        }}
+                    >
+                        Copy
+                    </button>
+                    {lastCreated.has_password && (
+                        <p className="muted">
+                            Recipient will be prompted for the password before
+                            decryption.
+                        </p>
+                    )}
+                </div>
+            )}
+            {forThisAlbum.length > 0 && (
+                <ul className="public-link-list">
+                    {forThisAlbum.map((l) => (
+                        <li key={l.id}>
+                            <code>{l.pub_id_b32.slice(0, 12)}…</code>
+                            <span className="muted">
+                                {l.has_password ? " · password" : " · fragment"}
+                                {l.expires_at !== null && (
+                                    <>
+                                        {" · expires "}
+                                        {new Date(l.expires_at * 1000).toLocaleDateString()}
+                                    </>
+                                )}
+                            </span>
+                            <button onClick={() => revoke(l.id)} className="revoke">
+                                Revoke
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
     );
 }

@@ -13,6 +13,7 @@ pub mod geocode;
 pub mod ingest;
 pub mod media;
 pub mod ml;
+pub mod public_link;
 pub mod search;
 pub mod share;
 
