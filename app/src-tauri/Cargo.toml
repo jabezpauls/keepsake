@@ -49,5 +49,9 @@ custom-protocol = ["tauri/custom-protocol"]
 # shell never talks to ort directly; all wiring lives in mv-core behind
 # these gates.
 ml-models = ["mv-core/ml-models"]
-ml-cuda = ["mv-core/ml-cuda"]
-ml-coreml = ["mv-core/ml-coreml"]
+# ml-cuda / ml-coreml must pull mv-app's OWN `ml-models` too, otherwise the
+# `#[cfg(feature = "ml-models")]` gates inside `commands/ml.rs` compile out
+# and `try_bootstrap_runtime` silently does nothing — the badge reads
+# "ML — no weights" even though mv-core has a fully-loaded runtime.
+ml-cuda = ["ml-models", "mv-core/ml-cuda"]
+ml-coreml = ["ml-models", "mv-core/ml-coreml"]
