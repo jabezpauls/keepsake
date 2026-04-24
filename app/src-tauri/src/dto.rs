@@ -390,6 +390,18 @@ pub struct IncomingShareView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+/// D9 pet asset row. `species` is decrypted from `pet_species_ct`
+/// server-side; `None` means flagged-as-pet without a species label.
+pub struct PetAssetView {
+    #[ts(type = "number")]
+    pub id: i64,
+    #[ts(type = "number | null")]
+    pub taken_at_utc_day: Option<i64>,
+    pub species: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 /// D7 public share-link, as returned to the UI. `url_fragment` is only
 /// populated on create — a subsequent `list_public_links` call can't
 /// recover the viewer key, so re-sharing a lost link requires creating

@@ -711,6 +711,57 @@ pub fn delete_public_link(conn: &Connection, id: i64, owner_id: i64) -> Result<b
     Ok(n > 0)
 }
 
+// --------- Pets (D9) ----------------------------------------------------------
+
+/// Set or clear the pet flag on an asset. When clearing (`is_pet=false`),
+/// `species_ct` is ignored and the species column is nulled to keep
+/// the row clean.
+pub fn set_asset_pet(
+    conn: &Connection,
+    asset_id: i64,
+    is_pet: bool,
+    species_ct: Option<&[u8]>,
+) -> Result<bool> {
+    let n = if is_pet {
+        conn.execute(
+            "UPDATE asset SET is_pet = 1, pet_species_ct = ?1 WHERE id = ?2",
+            params![species_ct, asset_id],
+        )?
+    } else {
+        conn.execute(
+            "UPDATE asset SET is_pet = 0, pet_species_ct = NULL WHERE id = ?1",
+            params![asset_id],
+        )?
+    };
+    Ok(n > 0)
+}
+
+/// List every asset flagged `is_pet = 1` for a given owner, most
+/// recent first. Returns `(asset_id, taken_at_utc_day, pet_species_ct)`.
+/// Species remains sealed; callers open with the owner's master key.
+pub fn list_pet_assets_for_user(
+    conn: &Connection,
+    user_id: i64,
+) -> Result<Vec<(i64, Option<i64>, Option<Vec<u8>>)>> {
+    let mut stmt = conn.prepare(
+        r"SELECT a.id, a.taken_at_utc_day, a.pet_species_ct
+          FROM asset a
+          JOIN source s ON s.id = a.source_id
+          WHERE s.owner_id = ?1 AND a.is_pet = 1
+          ORDER BY COALESCE(a.taken_at_utc_day, 0) DESC, a.id DESC",
+    )?;
+    let rows = stmt
+        .query_map(params![user_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Option<i64>>(1)?,
+                r.get::<_, Option<Vec<u8>>>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 pub fn insert_collection(
     conn: &Connection,
     owner_id: i64,

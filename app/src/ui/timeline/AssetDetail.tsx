@@ -326,6 +326,8 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
 
                     <SearchableTextEditor assetId={id} />
 
+                    <PetFlagEditor assetId={id} />
+
 
                     {detail.exif_json && (
                         <details className="exif-panel">
@@ -398,6 +400,49 @@ function SearchableTextEditor({ assetId }: { assetId: number }) {
                 </button>
                 {status && <span className="muted">{status}</span>}
             </div>
+        </div>
+    );
+}
+
+function PetFlagEditor({ assetId }: { assetId: number }) {
+    const queryClient = useQueryClient();
+    const [species, setSpecies] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [status, setStatus] = useState<string | null>(null);
+
+    const mark = async (isPet: boolean) => {
+        setBusy(true);
+        setStatus(null);
+        try {
+            await api.setAssetPet(assetId, isPet, isPet ? species.trim() || null : null);
+            setStatus(isPet ? "Marked as pet." : "Removed pet flag.");
+            await queryClient.invalidateQueries({ queryKey: ["pets"] });
+        } catch (e) {
+            setStatus(String(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="pet-flag-editor">
+            <strong>Pet</strong>
+            <div className="pet-flag-row">
+                <input
+                    type="text"
+                    placeholder="Species (dog, cat, bird, …)"
+                    value={species}
+                    onChange={(e) => setSpecies(e.target.value)}
+                    disabled={busy}
+                />
+                <button onClick={() => mark(true)} disabled={busy}>
+                    Mark as pet
+                </button>
+                <button onClick={() => mark(false)} disabled={busy}>
+                    Not a pet
+                </button>
+            </div>
+            {status && <span className="muted">{status}</span>}
         </div>
     );
 }
