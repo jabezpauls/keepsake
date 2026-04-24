@@ -364,6 +364,23 @@ pub fn delete_trips_for_user(conn: &Connection, user_id: i64) -> Result<usize> {
     Ok(n)
 }
 
+/// List every `(asset_id, taken_at_utc_day)` tuple for a user whose
+/// day stamp is non-null. Used by memories/on-this-day lookups.
+pub fn list_dated_assets_for_user(conn: &Connection, user_id: i64) -> Result<Vec<(i64, i64)>> {
+    let mut stmt = conn.prepare(
+        r"SELECT a.id, a.taken_at_utc_day
+          FROM asset a
+          JOIN source s ON s.id = a.source_id
+          WHERE s.owner_id = ?1 AND a.taken_at_utc_day IS NOT NULL",
+    )?;
+    let rows = stmt
+        .query_map(params![user_id], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 /// List every (asset_id, gps_ct, taken_at_utc_day) tuple owned by
 /// `user_id` where both GPS ciphertext and the day stamp are non-null.
 /// Trip detection needs both — a photo without a GPS tag can't join a

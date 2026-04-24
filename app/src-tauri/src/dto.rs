@@ -329,6 +329,20 @@ pub struct PeerAcceptedView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+pub struct MemoryGroupView {
+    /// Year the photos were taken in.
+    #[ts(type = "number")]
+    pub year: i32,
+    /// Years ago relative to today ("1 year ago", "5 years ago").
+    #[ts(type = "number")]
+    pub years_ago: i32,
+    /// Asset ids ordered; the UI pages/thumbnails from these.
+    #[ts(type = "Array<number>")]
+    pub asset_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 pub struct TripView {
     #[ts(type = "number")]
     pub id: i64,

@@ -19,6 +19,7 @@ export type { ShareInviteView } from "./bindings/ShareInviteView";
 export type { ShareRecipientView } from "./bindings/ShareRecipientView";
 export type { IncomingShareView } from "./bindings/IncomingShareView";
 export type { TripView } from "./bindings/TripView";
+export type { MemoryGroupView } from "./bindings/MemoryGroupView";
 export type { NearDupCluster } from "./bindings/NearDupCluster";
 export type { NearDupMember } from "./bindings/NearDupMember";
 export type { PersonView } from "./bindings/PersonView";
@@ -45,6 +46,7 @@ import type { ShareInviteView } from "./bindings/ShareInviteView";
 import type { ShareRecipientView } from "./bindings/ShareRecipientView";
 import type { IncomingShareView } from "./bindings/IncomingShareView";
 import type { TripView } from "./bindings/TripView";
+import type { MemoryGroupView } from "./bindings/MemoryGroupView";
 import type { NearDupCluster } from "./bindings/NearDupCluster";
 import type { PersonView } from "./bindings/PersonView";
 import type { SearchHitView } from "./bindings/SearchHitView";
@@ -178,6 +180,8 @@ export const api = {
     // --- analytics (Phase 3.3+) ----------------------------------------
     detectTripsRun: () => invoke<number>("detect_trips_run"),
     listTrips: () => invoke<TripView[]>("list_trips"),
+    memoriesOnThisDay: () =>
+        invoke<MemoryGroupView[]>("memories_on_this_day"),
 };
 
 /// Decode a byte-array returned by `assetThumbnail` / `assetOriginal` into a

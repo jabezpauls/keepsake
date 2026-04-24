@@ -73,6 +73,7 @@ pub fn run() {
             commands::share::accept_incoming_share,
             commands::analytics::detect_trips_run,
             commands::analytics::list_trips,
+            commands::analytics::memories_on_this_day,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

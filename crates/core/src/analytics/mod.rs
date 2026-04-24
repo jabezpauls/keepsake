@@ -2,4 +2,5 @@
 //! albums. Each sub-module is standalone and can be disabled without
 //! affecting the others.
 
+pub mod memories;
 pub mod trips;

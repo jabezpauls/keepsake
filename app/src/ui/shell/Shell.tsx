@@ -14,6 +14,7 @@ import PersonDetail from "../people/PersonDetail";
 import Duplicates from "../duplicates/Duplicates";
 import Peers from "../peers/Peers";
 import Trips from "../trips/Trips";
+import Memories from "../memories/Memories";
 
 export default function Shell() {
     const view = useSession((s) => s.view);
@@ -78,6 +79,7 @@ export default function Shell() {
                 {navButton("map", "Map")}
                 {navButton("people", "People")}
                 {navButton("trips", "Trips")}
+                {navButton("memories", "Memories")}
                 {navButton("duplicates", "Duplicates")}
                 {navButton(
                     "albums",
@@ -114,6 +116,7 @@ export default function Shell() {
                 {view.kind === "duplicates" && <Duplicates />}
                 {view.kind === "peers" && <Peers />}
                 {view.kind === "trips" && <Trips />}
+                {view.kind === "memories" && <Memories />}
             </section>
         </div>
     );
