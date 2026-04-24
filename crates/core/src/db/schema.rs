@@ -287,6 +287,30 @@ CREATE INDEX IF NOT EXISTS idx_share_status_col
     ON share_status(collection_id, changed_at DESC);
 ";
 
+/// DDL v7 — Phase 3 (D4). Smart albums: rule-compiled collections whose
+/// membership is materialised on demand (not auto-reindexed on every
+/// ingest). Additive only.
+///
+/// - `collection.smart_spec_ct` — sealed JSON `SmartRule` carrying the
+///   user-authored filter predicate. Sealed with the owning user's
+///   master key, consistent with `name_ct`.
+/// - `collection_member_smart` — snapshot of the most-recent refresh.
+///   Separate from `collection_member` so manual edits never land on
+///   smart albums (and vice-versa). `snapshot_at` lets the UI show
+///   "refreshed 2h ago".
+pub const DDL_V7: &str = r"
+ALTER TABLE collection ADD COLUMN smart_spec_ct BLOB;
+
+CREATE TABLE IF NOT EXISTS collection_member_smart (
+    collection_id  INTEGER NOT NULL REFERENCES collection(id),
+    asset_id       INTEGER NOT NULL REFERENCES asset(id),
+    snapshot_at    INTEGER NOT NULL,
+    PRIMARY KEY (collection_id, asset_id)
+);
+CREATE INDEX IF NOT EXISTS idx_collection_member_smart_asset
+    ON collection_member_smart(asset_id);
+";
+
 /// Set up an open SQLite connection with the Phase-1 pragmas.
 pub fn configure_connection(conn: &Connection) -> Result<()> {
     // WAL + foreign keys + synchronous=NORMAL per §4.

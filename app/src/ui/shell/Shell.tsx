@@ -15,6 +15,8 @@ import Duplicates from "../duplicates/Duplicates";
 import Peers from "../peers/Peers";
 import Trips from "../trips/Trips";
 import Memories from "../memories/Memories";
+import SmartAlbums from "../smart_albums/SmartAlbums";
+import SmartAlbumDetail from "../smart_albums/SmartAlbumDetail";
 
 export default function Shell() {
     const view = useSession((s) => s.view);
@@ -80,6 +82,11 @@ export default function Shell() {
                 {navButton("people", "People")}
                 {navButton("trips", "Trips")}
                 {navButton("memories", "Memories")}
+                {navButton(
+                    "smart_albums",
+                    "Smart",
+                    view.kind === "smart_albums" || view.kind === "smart_album",
+                )}
                 {navButton("duplicates", "Duplicates")}
                 {navButton(
                     "albums",
@@ -117,6 +124,10 @@ export default function Shell() {
                 {view.kind === "peers" && <Peers />}
                 {view.kind === "trips" && <Trips />}
                 {view.kind === "memories" && <Memories />}
+                {view.kind === "smart_albums" && <SmartAlbums />}
+                {view.kind === "smart_album" && (
+                    <SmartAlbumDetail id={view.id} name={view.name} />
+                )}
             </section>
         </div>
     );

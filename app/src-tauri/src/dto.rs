@@ -399,6 +399,51 @@ pub struct ShareInviteView {
     pub asset_count: u32,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+/// D4 rule spec. Mirrors `mv_core::analytics::smart_albums::SmartRule`
+/// 1:1 so the UI can author a rule without reaching into a separate
+/// crate. Fields default to `null` (all) or `[]` (person ids) — the
+/// `any` empty-rule check lives on the command side, not in types.
+pub struct SmartRuleView {
+    pub is_raw: Option<bool>,
+    pub is_video: Option<bool>,
+    pub is_screenshot: Option<bool>,
+    pub is_live: Option<bool>,
+    pub has_faces: Option<bool>,
+    pub camera_make: Option<String>,
+    pub lens: Option<String>,
+    #[ts(type = "number | null")]
+    pub source_id: Option<i64>,
+    #[ts(type = "Array<number>")]
+    pub person_ids: Vec<i64>,
+    #[ts(type = "number | null")]
+    pub after_day: Option<i64>,
+    #[ts(type = "number | null")]
+    pub before_day: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+pub struct SmartAlbumView {
+    #[ts(type = "number")]
+    pub id: i64,
+    /// Decrypted display name.
+    pub name: String,
+    /// Rule that produced this album's snapshot.
+    pub rule: SmartRuleView,
+    /// Last materialised count. Stale until `refresh_smart_album` runs.
+    #[ts(type = "number")]
+    pub member_count: i64,
+    /// UNIX seconds of the last refresh. `None` when the album was
+    /// created but never materialised (shouldn't happen — create always
+    /// refreshes — but kept nullable for UI safety).
+    #[ts(type = "number | null")]
+    pub snapshot_at: Option<i64>,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
 pub struct MlReindexReport {

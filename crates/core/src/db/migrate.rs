@@ -9,7 +9,7 @@ use rusqlite::Connection;
 use crate::Result;
 
 /// Target schema version shipped by this build.
-pub const CURRENT_VERSION: i32 = 6;
+pub const CURRENT_VERSION: i32 = 7;
 
 /// Apply any migrations needed to bring `conn` up to [`CURRENT_VERSION`].
 pub fn apply(conn: &Connection) -> Result<()> {
@@ -46,6 +46,10 @@ pub fn apply(conn: &Connection) -> Result<()> {
     if version < 6 {
         conn.execute_batch(super::schema::DDL_V6)?;
         conn.pragma_update(None, "user_version", 6)?;
+    }
+    if version < 7 {
+        conn.execute_batch(super::schema::DDL_V7)?;
+        conn.pragma_update(None, "user_version", 7)?;
     }
     Ok(())
 }
@@ -225,5 +229,47 @@ mod tests {
             )
             .unwrap();
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn v6_to_v7_adds_smart_spec_and_member_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        super::super::schema::init(&conn).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V2).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V3).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V4).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V5).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V6).unwrap();
+        conn.pragma_update(None, "user_version", 6_i32).unwrap();
+
+        apply(&conn).unwrap();
+
+        // smart_spec_ct column on collection.
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(collection)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.iter().any(|c| c == "smart_spec_ct"));
+
+        // collection_member_smart table + asset index present.
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='collection_member_smart'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1);
+        let idx: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_collection_member_smart_asset'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx, 1);
     }
 }

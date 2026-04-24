@@ -20,6 +20,8 @@ export type { ShareRecipientView } from "./bindings/ShareRecipientView";
 export type { IncomingShareView } from "./bindings/IncomingShareView";
 export type { TripView } from "./bindings/TripView";
 export type { MemoryGroupView } from "./bindings/MemoryGroupView";
+export type { SmartAlbumView } from "./bindings/SmartAlbumView";
+export type { SmartRuleView } from "./bindings/SmartRuleView";
 export type { NearDupCluster } from "./bindings/NearDupCluster";
 export type { NearDupMember } from "./bindings/NearDupMember";
 export type { PersonView } from "./bindings/PersonView";
@@ -47,6 +49,8 @@ import type { ShareRecipientView } from "./bindings/ShareRecipientView";
 import type { IncomingShareView } from "./bindings/IncomingShareView";
 import type { TripView } from "./bindings/TripView";
 import type { MemoryGroupView } from "./bindings/MemoryGroupView";
+import type { SmartAlbumView } from "./bindings/SmartAlbumView";
+import type { SmartRuleView } from "./bindings/SmartRuleView";
 import type { NearDupCluster } from "./bindings/NearDupCluster";
 import type { PersonView } from "./bindings/PersonView";
 import type { SearchHitView } from "./bindings/SearchHitView";
@@ -182,6 +186,25 @@ export const api = {
     listTrips: () => invoke<TripView[]>("list_trips"),
     memoriesOnThisDay: () =>
         invoke<MemoryGroupView[]>("memories_on_this_day"),
+
+    // --- smart albums (D4) ---------------------------------------------
+    createSmartAlbum: (name: string, rule: SmartRuleView) =>
+        invoke<number>("create_smart_album", { name, rule }),
+    listSmartAlbums: () => invoke<SmartAlbumView[]>("list_smart_albums"),
+    refreshSmartAlbum: (id: number) =>
+        invoke<number>("refresh_smart_album", { id }),
+    deleteSmartAlbum: (id: number) =>
+        invoke<boolean>("delete_smart_album", { id }),
+    smartAlbumPage: (
+        id: number,
+        cursor: import("./bindings/TimelineCursor").TimelineCursor | null,
+        limit?: number,
+    ) =>
+        invoke<import("./bindings/TimelinePage").TimelinePage>("smart_album_page", {
+            id,
+            cursor,
+            limit: limit ?? null,
+        }),
 };
 
 /// Decode a byte-array returned by `assetThumbnail` / `assetOriginal` into a

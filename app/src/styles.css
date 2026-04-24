@@ -1449,3 +1449,92 @@ p.error {
     padding: 0 0.75rem;
     font-size: 0.9rem;
 }
+
+/* ----- Smart albums (D4) ------------------------------------------------- */
+
+.smart-albums {
+    padding: 1rem 1.5rem;
+    max-width: 960px;
+    margin: 0 auto;
+}
+
+.smart-albums-nav {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.smart-albums-nav .spacer {
+    flex: 1;
+}
+
+.smart-album-builder {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+    background: var(--bg-1, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+}
+
+.smart-album-name {
+    font-size: 1rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-2, rgba(0, 0, 0, 0.25));
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+    color: inherit;
+    border-radius: 4px;
+}
+
+.smart-album-builder-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.smart-album-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.smart-album-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: var(--bg-1, rgba(255, 255, 255, 0.04));
+    border-radius: 6px;
+}
+
+.smart-album-open {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    text-align: left;
+    background: none;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+}
+
+.smart-album-open strong {
+    font-size: 1rem;
+}
+
+.smart-album-rule {
+    font-size: 0.85rem;
+    color: var(--muted, rgba(255, 255, 255, 0.55));
+}
+
+.smart-album-row .danger {
+    color: #c77;
+}

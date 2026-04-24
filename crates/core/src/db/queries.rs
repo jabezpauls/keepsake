@@ -424,6 +424,159 @@ pub fn list_trip_collections(conn: &Connection, user_id: i64) -> Result<Vec<Coll
     Ok(rows)
 }
 
+/// Row returned by [`list_smart_album_collections`]. Carries the sealed
+/// rule spec so the commands layer can decrypt + surface it to the UI.
+#[derive(Debug, Clone)]
+pub struct SmartAlbumCollectionRow {
+    pub id: i64,
+    pub owner_id: i64,
+    pub name_ct: Vec<u8>,
+    pub smart_spec_ct: Vec<u8>,
+    pub created_at: i64,
+}
+
+/// List every `kind='smart_album'` collection owned by `user_id`. A row
+/// without a `smart_spec_ct` is treated as corrupt and skipped silently —
+/// the only way to get one is direct DB tampering, and the UI has no
+/// useful action for a spec-less smart album.
+pub fn list_smart_album_collections(
+    conn: &Connection,
+    user_id: i64,
+) -> Result<Vec<SmartAlbumCollectionRow>> {
+    let mut stmt = conn.prepare(
+        r"SELECT id, owner_id, name_ct, smart_spec_ct, created_at
+          FROM collection
+          WHERE owner_id = ?1 AND kind = 'smart_album' AND smart_spec_ct IS NOT NULL
+          ORDER BY id DESC",
+    )?;
+    let rows = stmt
+        .query_map(params![user_id], |r| {
+            Ok(SmartAlbumCollectionRow {
+                id: r.get(0)?,
+                owner_id: r.get(1)?,
+                name_ct: r.get(2)?,
+                smart_spec_ct: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Fetch just the sealed rule spec for a smart album. Used by the
+/// "Refresh" command — we rehydrate the rule, rematerialise, and write
+/// the snapshot. Returns `None` if the collection isn't a smart album or
+/// the spec is missing.
+pub fn get_smart_album_spec(
+    conn: &Connection,
+    collection_id: i64,
+    user_id: i64,
+) -> Result<Option<Vec<u8>>> {
+    let row: Option<Option<Vec<u8>>> = conn
+        .query_row(
+            r"SELECT smart_spec_ct FROM collection
+              WHERE id = ?1 AND owner_id = ?2 AND kind = 'smart_album'",
+            params![collection_id, user_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(row.flatten())
+}
+
+/// Write (create or overwrite) the sealed rule spec on a smart album.
+/// Returns `false` if the row isn't present or not a smart album — the
+/// caller is then expected to escalate.
+pub fn set_smart_album_spec(
+    conn: &Connection,
+    collection_id: i64,
+    user_id: i64,
+    smart_spec_ct: &[u8],
+) -> Result<bool> {
+    let n = conn.execute(
+        r"UPDATE collection SET smart_spec_ct = ?1
+          WHERE id = ?2 AND owner_id = ?3 AND kind = 'smart_album'",
+        params![smart_spec_ct, collection_id, user_id],
+    )?;
+    Ok(n > 0)
+}
+
+/// Delete a smart album. Drops the snapshot first to respect the FK
+/// chain (there's no ON DELETE CASCADE in the schema).
+pub fn delete_smart_album(conn: &Connection, collection_id: i64, user_id: i64) -> Result<bool> {
+    conn.execute(
+        "DELETE FROM collection_member_smart WHERE collection_id = ?1",
+        params![collection_id],
+    )?;
+    let n = conn.execute(
+        "DELETE FROM collection WHERE id = ?1 AND owner_id = ?2 AND kind = 'smart_album'",
+        params![collection_id, user_id],
+    )?;
+    Ok(n > 0)
+}
+
+/// Latest snapshot timestamp for a smart album, or `None` when it has
+/// never been materialised. The UI reads this to render "refreshed N
+/// hours ago".
+pub fn smart_album_snapshot_at(conn: &Connection, collection_id: i64) -> Result<Option<i64>> {
+    let row: Option<i64> = conn
+        .query_row(
+            "SELECT MAX(snapshot_at) FROM collection_member_smart WHERE collection_id = ?1",
+            params![collection_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(row)
+}
+
+/// Paginated materialised view of a smart album's members. Same cursor
+/// contract as [`list_collection_page`] so the UI can share a single
+/// cursor type.
+pub fn list_smart_album_page(
+    conn: &Connection,
+    collection_id: i64,
+    cursor_day: i64,
+    cursor_id: i64,
+    limit: u32,
+) -> Result<Vec<TimelineEntry>> {
+    let mut stmt = conn.prepare(
+        r"SELECT a.id, a.taken_at_utc_day, a.mime, a.cas_ref,
+                 a.is_video, a.is_live, a.is_raw, a.wrapped_file_key
+          FROM asset a
+          JOIN collection_member_smart m ON m.asset_id = a.id
+          WHERE m.collection_id = ?1
+            AND ((COALESCE(a.taken_at_utc_day, 0) < ?2)
+              OR (COALESCE(a.taken_at_utc_day, 0) = ?2 AND a.id < ?3))
+          ORDER BY COALESCE(a.taken_at_utc_day, 0) DESC, a.id DESC
+          LIMIT ?4",
+    )?;
+    let rows = stmt
+        .query_map(params![collection_id, cursor_day, cursor_id, limit], |r| {
+            Ok(TimelineEntry {
+                id: r.get(0)?,
+                taken_at_utc_day: r.get(1)?,
+                mime: r.get(2)?,
+                cas_ref: r.get(3)?,
+                is_video: r.get::<_, i64>(4)? != 0,
+                is_live: r.get::<_, i64>(5)? != 0,
+                is_raw: r.get::<_, i64>(6)? != 0,
+                wrapped_file_key: r.get(7)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Same count as [`count_collection_members`] but against the
+/// materialised smart-album snapshot.
+pub fn count_smart_album_members(conn: &Connection, collection_id: i64) -> Result<i64> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM collection_member_smart WHERE collection_id = ?1",
+        params![collection_id],
+        |r| r.get(0),
+    )?;
+    Ok(n)
+}
+
 pub fn insert_collection(
     conn: &Connection,
     owner_id: i64,
@@ -715,15 +868,22 @@ pub fn list_collections(
     owner_id: i64,
     include_hidden: bool,
 ) -> Result<Vec<CollectionRow>> {
+    // Smart albums, trips, and memories live in `collection` but have their
+    // own UI tabs + query paths, so the generic "Albums" listing excludes
+    // them. Hidden vault is separately gated on `include_hidden`.
     let mut stmt = if include_hidden {
         conn.prepare(
             r"SELECT id, owner_id, kind, name_ct, has_password, password_salt, created_at
-              FROM collection WHERE owner_id = ?1 ORDER BY id",
+              FROM collection
+              WHERE owner_id = ?1 AND kind IN ('album','hidden_vault')
+              ORDER BY id",
         )?
     } else {
         conn.prepare(
             r"SELECT id, owner_id, kind, name_ct, has_password, password_salt, created_at
-              FROM collection WHERE owner_id = ?1 AND kind != 'hidden_vault' ORDER BY id",
+              FROM collection
+              WHERE owner_id = ?1 AND kind = 'album'
+              ORDER BY id",
         )?
     };
     let rows = stmt

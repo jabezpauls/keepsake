@@ -3,4 +3,5 @@
 //! affecting the others.
 
 pub mod memories;
+pub mod smart_albums;
 pub mod trips;

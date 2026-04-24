@@ -1,9 +1,11 @@
-//! Phase 3 analytics Tauri commands — trip detection for now; memories
-//! and smart albums extend this module in D3/D4.
+//! Phase 3 analytics Tauri commands — trip detection, memories, and
+//! smart albums. Each surface keeps its own command path so the UI can
+//! address them independently.
 
 use std::sync::Arc;
 
 use mv_core::analytics::memories::{on_this_day, MemoryGroup};
+use mv_core::analytics::smart_albums::{materialize as materialize_smart, SmartRule};
 use mv_core::analytics::trips::{detect_trips, GeoPoint, TripParams};
 use mv_core::crypto::envelope::{open_row, seal_row};
 use mv_core::crypto::CollectionKey;
@@ -11,9 +13,14 @@ use mv_core::db::queries as q;
 use mv_core::geocode::Geocoder;
 use tauri::State;
 
-use crate::dto::{MemoryGroupView, TripView};
+use crate::dto::{
+    MemoryGroupView, SmartAlbumView, SmartRuleView, TimelineCursor, TimelineEntryView,
+    TimelinePage, TripView,
+};
 use crate::errors::{wire, AppError, AppResult};
 use crate::state::AppState;
+
+const DEFAULT_SMART_PAGE_LIMIT: u32 = 120;
 
 #[tauri::command]
 pub async fn detect_trips_run(state: State<'_, AppState>) -> Result<u32, String> {
@@ -164,6 +171,250 @@ async fn memories_on_this_day_impl(state: &AppState) -> AppResult<Vec<MemoryGrou
     })
     .await
     .map_err(AppError::from)?
+}
+
+// =========== Smart albums (D4) ================================================
+
+#[tauri::command]
+pub async fn create_smart_album(
+    state: State<'_, AppState>,
+    name: String,
+    rule: SmartRuleView,
+) -> Result<i64, String> {
+    wire(create_smart_album_impl(&state, name, rule).await)
+}
+
+async fn create_smart_album_impl(
+    state: &AppState,
+    name: String,
+    rule: SmartRuleView,
+) -> AppResult<i64> {
+    if name.trim().is_empty() {
+        return Err(AppError::BadRequest("name required".into()));
+    }
+    let core_rule = from_view(rule);
+    if core_rule.is_empty() {
+        return Err(AppError::BadRequest(
+            "rule needs at least one clause".into(),
+        ));
+    }
+    let (db_handle, master_bytes, user_id, ck) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (
+            s.db.clone(),
+            *s.user.master_key.as_bytes(),
+            s.user.user_id,
+            s.default_collection_key.clone(),
+        )
+    };
+
+    let cid = tokio::task::spawn_blocking(move || -> AppResult<i64> {
+        let guard = db_handle.blocking_lock();
+        let master_key = mv_core::crypto::MasterKey::from_bytes(master_bytes);
+        let name_ct = seal_row(name.as_bytes(), 0, master_key.as_bytes())?;
+        let spec_json = serde_json::to_vec(&core_rule).map_err(|e| {
+            tracing::error!(error = %e, "serialize smart rule");
+            AppError::Internal
+        })?;
+        let spec_ct = seal_row(&spec_json, 0, master_key.as_bytes())?;
+        let now = chrono::Utc::now().timestamp();
+        let cid = q::insert_collection(&guard, user_id, "smart_album", &name_ct, false, None, now)?;
+        if !q::set_smart_album_spec(&guard, cid, user_id, &spec_ct)? {
+            return Err(AppError::Internal);
+        }
+        let ck: Arc<CollectionKey> = ck;
+        materialize_smart(&guard, cid, &core_rule, Some(&ck), now)?;
+        Ok(cid)
+    })
+    .await
+    .map_err(AppError::from)??;
+
+    Ok(cid)
+}
+
+#[tauri::command]
+pub async fn list_smart_albums(state: State<'_, AppState>) -> Result<Vec<SmartAlbumView>, String> {
+    wire(list_smart_albums_impl(&state).await)
+}
+
+async fn list_smart_albums_impl(state: &AppState) -> AppResult<Vec<SmartAlbumView>> {
+    let (db_handle, master_bytes, user_id) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (s.db.clone(), *s.user.master_key.as_bytes(), s.user.user_id)
+    };
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<SmartAlbumView>> {
+        let guard = db_handle.blocking_lock();
+        let rows = q::list_smart_album_collections(&guard, user_id)?;
+        let master_key = mv_core::crypto::MasterKey::from_bytes(master_bytes);
+        let mut out = Vec::with_capacity(rows.len());
+        for r in rows {
+            let name = open_row(&r.name_ct, 0, master_key.as_bytes())
+                .ok()
+                .and_then(|b| String::from_utf8(b).ok())
+                .unwrap_or_default();
+            let rule: SmartRule = match open_row(&r.smart_spec_ct, 0, master_key.as_bytes())
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+            {
+                Some(r) => r,
+                None => continue,
+            };
+            let member_count = q::count_smart_album_members(&guard, r.id)?;
+            let snapshot_at = q::smart_album_snapshot_at(&guard, r.id)?;
+            out.push(SmartAlbumView {
+                id: r.id,
+                name,
+                rule: to_view(rule),
+                member_count,
+                snapshot_at,
+                created_at: r.created_at,
+            });
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)?
+}
+
+#[tauri::command]
+pub async fn refresh_smart_album(state: State<'_, AppState>, id: i64) -> Result<u32, String> {
+    wire(refresh_smart_album_impl(&state, id).await)
+}
+
+async fn refresh_smart_album_impl(state: &AppState, id: i64) -> AppResult<u32> {
+    let (db_handle, master_bytes, user_id, ck) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (
+            s.db.clone(),
+            *s.user.master_key.as_bytes(),
+            s.user.user_id,
+            s.default_collection_key.clone(),
+        )
+    };
+
+    let n = tokio::task::spawn_blocking(move || -> AppResult<u32> {
+        let guard = db_handle.blocking_lock();
+        let spec_ct = q::get_smart_album_spec(&guard, id, user_id)?.ok_or(AppError::NotFound)?;
+        let master_key = mv_core::crypto::MasterKey::from_bytes(master_bytes);
+        let plain = open_row(&spec_ct, 0, master_key.as_bytes())?;
+        let rule: SmartRule = serde_json::from_slice(&plain).map_err(|e| {
+            tracing::error!(error = %e, "decode smart rule");
+            AppError::Internal
+        })?;
+        let ck: Arc<CollectionKey> = ck;
+        let now = chrono::Utc::now().timestamp();
+        let n = materialize_smart(&guard, id, &rule, Some(&ck), now)?;
+        Ok(n as u32)
+    })
+    .await
+    .map_err(AppError::from)??;
+
+    Ok(n)
+}
+
+#[tauri::command]
+pub async fn delete_smart_album(state: State<'_, AppState>, id: i64) -> Result<bool, String> {
+    wire(delete_smart_album_impl(&state, id).await)
+}
+
+async fn delete_smart_album_impl(state: &AppState, id: i64) -> AppResult<bool> {
+    let (db_handle, user_id) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (s.db.clone(), s.user.user_id)
+    };
+    tokio::task::spawn_blocking(move || -> AppResult<bool> {
+        let guard = db_handle.blocking_lock();
+        q::delete_smart_album(&guard, id, user_id).map_err(AppError::from)
+    })
+    .await
+    .map_err(AppError::from)?
+}
+
+#[tauri::command]
+pub async fn smart_album_page(
+    state: State<'_, AppState>,
+    id: i64,
+    cursor: Option<TimelineCursor>,
+    limit: Option<u32>,
+) -> Result<TimelinePage, String> {
+    wire(smart_album_page_impl(&state, id, cursor, limit).await)
+}
+
+async fn smart_album_page_impl(
+    state: &AppState,
+    id: i64,
+    cursor: Option<TimelineCursor>,
+    limit: Option<u32>,
+) -> AppResult<TimelinePage> {
+    let db_handle = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        s.db.clone()
+    };
+    let cur = cursor.unwrap_or_else(TimelineCursor::start);
+    let lim = limit.unwrap_or(DEFAULT_SMART_PAGE_LIMIT).min(500);
+
+    tokio::task::spawn_blocking(move || -> AppResult<TimelinePage> {
+        let guard = db_handle.blocking_lock();
+        let rows = q::list_smart_album_page(&guard, id, cur.day, cur.id, lim)?;
+        let entries: Vec<_> = rows
+            .iter()
+            .map(|r| TimelineEntryView {
+                id: r.id,
+                taken_at_utc_day: r.taken_at_utc_day,
+                mime: r.mime.clone(),
+                is_video: r.is_video,
+                is_live: r.is_live,
+                is_raw: r.is_raw,
+            })
+            .collect();
+        let next_cursor = rows.last().map(|r| TimelineCursor {
+            day: r.taken_at_utc_day.unwrap_or(0),
+            id: r.id,
+        });
+        Ok(TimelinePage {
+            entries,
+            next_cursor,
+        })
+    })
+    .await
+    .map_err(AppError::from)?
+}
+
+fn from_view(v: SmartRuleView) -> SmartRule {
+    SmartRule {
+        is_raw: v.is_raw,
+        is_video: v.is_video,
+        is_screenshot: v.is_screenshot,
+        is_live: v.is_live,
+        has_faces: v.has_faces,
+        camera_make: v.camera_make,
+        lens: v.lens,
+        source_id: v.source_id,
+        person_ids: v.person_ids,
+        after_day: v.after_day,
+        before_day: v.before_day,
+    }
+}
+
+fn to_view(r: SmartRule) -> SmartRuleView {
+    SmartRuleView {
+        is_raw: r.is_raw,
+        is_video: r.is_video,
+        is_screenshot: r.is_screenshot,
+        is_live: r.is_live,
+        has_faces: r.has_faces,
+        camera_make: r.camera_make,
+        lens: r.lens,
+        source_id: r.source_id,
+        person_ids: r.person_ids,
+        after_day: r.after_day,
+        before_day: r.before_day,
+    }
 }
 
 /// Render a `days-since-epoch` pair as "Jan 3 → Jan 10, 2024". Falls

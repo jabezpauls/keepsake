@@ -26,7 +26,9 @@ export type View =
     | { kind: "duplicates" }
     | { kind: "peers" }
     | { kind: "trips" }
-    | { kind: "memories" };
+    | { kind: "memories" }
+    | { kind: "smart_albums" }
+    | { kind: "smart_album"; id: number; name: string };
 
 interface SessionStore {
     session: SessionHandle | null;
