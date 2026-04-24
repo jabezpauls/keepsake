@@ -29,11 +29,15 @@ pub type KeyResolver = Arc<dyn Fn(i64) -> Option<CollectionKey> + Send + Sync>;
 #[derive(Debug, Clone)]
 pub struct MlConfig {
     /// Directory containing ONNX model files. Names inside are fixed by
-    /// `scripts/download_models.sh`.
+    /// `scripts/download_models.sh` / the in-app downloader.
     pub model_dir: PathBuf,
     /// Preferred execution provider. `auto` tries CUDA/CoreML then falls back
     /// to CPU (MLAS).
     pub execution_provider: ExecutionProvider,
+    /// Bundle these weights belong to. Required so the loader knows which
+    /// SHA-256 pins to verify against and which embedding dims to expect.
+    #[cfg(feature = "ml-models")]
+    pub bundle: super::bundles::BundleId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,11 +62,13 @@ pub struct MlRuntime {
 
 impl MlRuntime {
     /// Load the runtime. Off-flag this is always `Err(ModelsUnavailable)`.
-    /// On-flag: verifies each model's SHA-256 against `ml::manifest`, then
-    /// builds sessions with the preferred provider plus CPU fallback.
+    /// On-flag: verifies each model's SHA-256 against the bundle named by
+    /// `config.bundle`, then builds sessions with the preferred provider
+    /// plus CPU fallback.
     #[cfg(feature = "ml-models")]
     pub fn load(config: MlConfig) -> Result<Self> {
-        let sessions = super::loader::load_all(&config.model_dir, config.execution_provider)?;
+        let sessions =
+            super::loader::load_all(&config.model_dir, config.execution_provider, config.bundle)?;
         let tokenizer = super::tokenizer::ClipTokenizer::load(&config.model_dir)?;
         Ok(Self {
             config,
@@ -74,6 +80,34 @@ impl MlRuntime {
     #[cfg(not(feature = "ml-models"))]
     pub fn load(_config: MlConfig) -> Result<Self> {
         Err(Error::ModelsUnavailable)
+    }
+
+    /// CLIP embedding dim actually emitted by the loaded bundle (768 for
+    /// Full, 512 for Lite). Off-flag returns 0 — search then falls back to
+    /// metadata-only ranking.
+    #[cfg(feature = "ml-models")]
+    #[must_use]
+    pub fn clip_dim(&self) -> usize {
+        self.sessions.clip_dim
+    }
+
+    #[cfg(not(feature = "ml-models"))]
+    #[must_use]
+    pub fn clip_dim(&self) -> usize {
+        0
+    }
+
+    /// Bundle id the runtime loaded from. Off-flag returns `None`.
+    #[cfg(feature = "ml-models")]
+    #[must_use]
+    pub fn bundle(&self) -> Option<super::bundles::BundleId> {
+        Some(self.sessions.bundle)
+    }
+
+    #[cfg(not(feature = "ml-models"))]
+    #[must_use]
+    pub fn bundle(&self) -> Option<()> {
+        None
     }
 
     /// Human-readable execution-provider label ("Auto" / "Cpu" / ...). Used by
@@ -360,6 +394,8 @@ mod tests {
         let cfg = MlConfig {
             model_dir: PathBuf::from("/nonexistent"),
             execution_provider: ExecutionProvider::Auto,
+            #[cfg(feature = "ml-models")]
+            bundle: super::super::bundles::BundleId::Full,
         };
         let r = MlRuntime::load(cfg);
         assert!(matches!(r, Err(Error::ModelsUnavailable)));

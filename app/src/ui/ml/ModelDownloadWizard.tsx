@@ -9,6 +9,15 @@ interface Props {
     onClose: () => void;
 }
 
+type BundleOption = {
+    id: string;
+    display_name: string;
+    description: string;
+    clip_dim: number;
+    face_dim: number;
+    approx_bytes: number;
+};
+
 type PerFile = {
     name: string;
     downloaded: number;
@@ -26,13 +35,42 @@ type PerFile = {
  */
 export default function ModelDownloadWizard({ onClose }: Props) {
     const queryClient = useQueryClient();
-    const status = useQuery<ModelsStatus>({
-        queryKey: ["ml-models-status"],
-        queryFn: api.mlModelsStatus,
+
+    const bundleOptions = useQuery({
+        queryKey: ["ml-bundle-options"],
+        queryFn: api.mlBundleOptions,
+    });
+    const selectedFromDisk = useQuery({
+        queryKey: ["ml-bundle-selected"],
+        queryFn: api.mlBundleSelected,
+    });
+
+    // Chosen bundle for *this* wizard run. Starts from disk (if the user
+    // already picked one previously) falling back to the hardware-aware
+    // recommendation once both queries resolve. User can flip it on the
+    // choice step before starting the download.
+    const [chosenBundle, setChosenBundle] = useState<string | null>(null);
+    const effectiveBundle = useMemo(() => {
+        if (chosenBundle) return chosenBundle;
+        return (
+            selectedFromDisk.data ??
+            bundleOptions.data?.recommended ??
+            "full"
+        );
+    }, [chosenBundle, selectedFromDisk.data, bundleOptions.data]);
+
+    const status = useQuery<
+        ModelsStatus & { bundle?: string | null }
+    >({
+        queryKey: ["ml-models-status", effectiveBundle],
+        queryFn: () => api.mlModelsStatus(effectiveBundle),
+        enabled: Boolean(effectiveBundle),
     });
 
     const [perFile, setPerFile] = useState<Record<string, PerFile>>({});
-    const [phase, setPhase] = useState<"review" | "downloading" | "done" | "failed">("review");
+    const [phase, setPhase] = useState<
+        "choose" | "review" | "downloading" | "done" | "failed"
+    >(selectedFromDisk.data ? "review" : "choose");
     const [failedList, setFailedList] = useState<string[]>([]);
 
     // Live event stream from the downloader. Attached on mount, detached on
@@ -103,7 +141,7 @@ export default function ModelDownloadWizard({ onClose }: Props) {
         setPerFile({});
         setFailedList([]);
         try {
-            await api.mlModelsDownload();
+            await api.mlModelsDownload(effectiveBundle);
             // Best-effort runtime reload so the badge flips without a
             // lock/unlock. `ml_runtime_reload` is idempotent — re-runs the
             // bootstrap path and replaces the inner Arc on success.
@@ -132,18 +170,34 @@ export default function ModelDownloadWizard({ onClose }: Props) {
 
                 <p style={{ color: "var(--muted)", margin: "0 0 0.75rem" }}>
                     Keepsake runs face recognition and semantic search on your
-                    device. These ~2 GB of ONNX weights are downloaded once and
-                    pinned by SHA-256. Nothing about your library ever leaves
-                    the machine.
+                    device. Pinned-by-SHA ONNX weights are downloaded once;
+                    nothing about your library ever leaves the machine.
                 </p>
+
+                {phase === "choose" && (
+                    <BundleChoice
+                        options={bundleOptions.data?.options ?? []}
+                        recommended={bundleOptions.data?.recommended ?? null}
+                        value={effectiveBundle}
+                        onChange={setChosenBundle}
+                        onNext={() => setPhase("review")}
+                        onCancel={onClose}
+                    />
+                )}
 
                 {phase === "review" && status.isLoading && <p>Checking…</p>}
 
                 {phase === "review" && !status.isLoading && (
                     <>
                         <div className="ml-wizard-summary">
+                            <strong>
+                                {bundleOptions.data?.options.find(
+                                    (o) => o.id === effectiveBundle,
+                                )?.display_name ?? effectiveBundle}
+                            </strong>{" "}
+                            —{" "}
                             {totals.missing === 0 ? (
-                                <span>All {totals.total} files present ✓</span>
+                                <span>all {totals.total} files present ✓</span>
                             ) : (
                                 <span>
                                     {totals.missing} of {totals.total} files
@@ -174,6 +228,9 @@ export default function ModelDownloadWizard({ onClose }: Props) {
                             ))}
                         </ul>
                         <div className="share-modal-actions">
+                            <button onClick={() => setPhase("choose")}>
+                                ← Change bundle
+                            </button>
                             <button onClick={onClose}>Skip for now</button>
                             <button
                                 className="primary"
@@ -277,6 +334,74 @@ export default function ModelDownloadWizard({ onClose }: Props) {
                 )}
             </div>
         </div>
+    );
+}
+
+function BundleChoice({
+    options,
+    recommended,
+    value,
+    onChange,
+    onNext,
+    onCancel,
+}: {
+    options: BundleOption[];
+    recommended: string | null;
+    value: string;
+    onChange: (id: string) => void;
+    onNext: () => void;
+    onCancel: () => void;
+}) {
+    if (options.length === 0) {
+        return <p>Loading options…</p>;
+    }
+    return (
+        <>
+            <h3>Choose a model bundle</h3>
+            <ul className="ml-bundle-choice">
+                {options.map((opt) => {
+                    const isSelected = opt.id === value;
+                    const isRec = opt.id === recommended;
+                    return (
+                        <li
+                            key={opt.id}
+                            className={
+                                "ml-bundle-option" +
+                                (isSelected ? " selected" : "")
+                            }
+                            onClick={() => onChange(opt.id)}
+                        >
+                            <div className="ml-bundle-option-head">
+                                <input
+                                    type="radio"
+                                    checked={isSelected}
+                                    onChange={() => onChange(opt.id)}
+                                />
+                                <strong>{opt.display_name}</strong>
+                                {isRec && (
+                                    <span className="ml-bundle-rec-tag">
+                                        recommended for your hardware
+                                    </span>
+                                )}
+                            </div>
+                            <div className="ml-bundle-option-desc">
+                                {opt.description}
+                            </div>
+                            <div className="ml-bundle-option-meta">
+                                ~{formatBytes(opt.approx_bytes)} · CLIP{" "}
+                                {opt.clip_dim}-d · face {opt.face_dim}-d
+                            </div>
+                        </li>
+                    );
+                })}
+            </ul>
+            <div className="share-modal-actions">
+                <button onClick={onCancel}>Skip for now</button>
+                <button className="primary" onClick={onNext}>
+                    Continue
+                </button>
+            </div>
+        </>
     );
 }
 

@@ -34,65 +34,19 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use super::manifest::{sha256_file, ModelEntry, MODELS};
+use super::bundles::{self, BundleFile, BundleId, BundleSpec};
+use super::manifest::sha256_file;
 use crate::{Error, Result};
 
-/// Canonical source for one manifest entry. Matches the files referenced
-/// in `scripts/download_models.sh`.
-#[derive(Debug, Clone, Copy)]
-pub struct DownloadSource {
-    /// Logical filename that matches the manifest entry.
-    pub name: &'static str,
-    /// Default HTTPS URL — HuggingFace immich-app mirrors. Overridden when
-    /// `env_var` is set in the process environment.
-    pub default_url: &'static str,
-    /// `MV_MODEL_URL_<NAME>` env var that wins over `default_url`.
-    pub env_var: &'static str,
-}
-
-pub const SOURCES: &[DownloadSource] = &[
-    DownloadSource {
-        name: "clip_visual.onnx",
-        default_url:
-            "https://huggingface.co/immich-app/ViT-L-14__openai/resolve/main/visual/model.onnx",
-        env_var: "MV_MODEL_URL_CLIP_VISUAL",
-    },
-    DownloadSource {
-        name: "clip_textual.onnx",
-        default_url:
-            "https://huggingface.co/immich-app/ViT-L-14__openai/resolve/main/textual/model.onnx",
-        env_var: "MV_MODEL_URL_CLIP_TEXTUAL",
-    },
-    DownloadSource {
-        name: "clip_tokenizer.json",
-        default_url:
-            "https://huggingface.co/immich-app/ViT-L-14__openai/resolve/main/textual/tokenizer.json",
-        env_var: "MV_MODEL_URL_CLIP_TOKENIZER",
-    },
-    DownloadSource {
-        name: "scrfd.onnx",
-        default_url:
-            "https://huggingface.co/immich-app/buffalo_l/resolve/main/detection/model.onnx",
-        env_var: "MV_MODEL_URL_SCRFD",
-    },
-    DownloadSource {
-        name: "arcface.onnx",
-        default_url:
-            "https://huggingface.co/immich-app/buffalo_l/resolve/main/recognition/model.onnx",
-        env_var: "MV_MODEL_URL_ARCFACE",
-    },
-];
-
-/// Resolve the URL for a given manifest filename. Returns `None` when the
-/// name isn't known to the sources table — in practice this only fires if
-/// `manifest::MODELS` drifts from `SOURCES` without the other being
-/// updated.
+/// Resolve the URL for a given manifest filename within a specific bundle.
+/// Returns `None` when the bundle doesn't declare that file — drift between
+/// the loader's expected names and the bundle catalog that a unit test
+/// catches (`every_bundle_has_the_five_expected_files`).
 #[must_use]
-pub fn url_for(name: &str) -> Option<String> {
-    SOURCES
-        .iter()
-        .find(|s| s.name == name)
-        .map(|s| std::env::var(s.env_var).unwrap_or_else(|_| s.default_url.to_string()))
+pub fn url_for(bundle: &BundleSpec, name: &str) -> Option<String> {
+    bundle
+        .file(name)
+        .map(|f| std::env::var(f.env_var).unwrap_or_else(|_| f.default_url.to_string()))
 }
 
 /// Survey result for one manifest entry.
@@ -121,17 +75,18 @@ pub struct ModelsStatus {
     pub all_present_valid: bool,
 }
 
-/// Walk every manifest entry and summarise what's on disk. Cheap — does one
+/// Walk a bundle's files and summarise what's on disk. Cheap — does one
 /// SHA-256 per present file; missing files short-circuit to `present:false`.
-pub fn survey(model_dir: &Path) -> Result<ModelsStatus> {
-    let mut files = Vec::with_capacity(MODELS.len());
+pub fn survey(model_dir: &Path, bundle_id: BundleId) -> Result<ModelsStatus> {
+    let bundle = bundles::by_id(bundle_id);
+    let mut files = Vec::with_capacity(bundle.files.len());
     let mut all_ok = true;
-    for entry in MODELS {
-        let path = model_dir.join(entry.name);
+    for f in bundle.files {
+        let path = model_dir.join(f.name);
         let (present, valid, size) = if path.exists() {
             let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
             match sha256_file(&path) {
-                Ok(hex) if hex.eq_ignore_ascii_case(entry.sha256_hex) => (true, true, size),
+                Ok(hex) if hex.eq_ignore_ascii_case(f.sha256_hex) => (true, true, size),
                 _ => (true, false, size),
             }
         } else {
@@ -141,11 +96,11 @@ pub fn survey(model_dir: &Path) -> Result<ModelsStatus> {
             all_ok = false;
         }
         files.push(ModelFileStatus {
-            name: entry.name.to_string(),
+            name: f.name.to_string(),
             present,
             valid,
             size_bytes: size,
-            sha256_expected: entry.sha256_hex.to_string(),
+            sha256_expected: f.sha256_hex.to_string(),
         });
     }
     Ok(ModelsStatus {
@@ -184,51 +139,65 @@ pub enum DownloadEvent {
     AllDone { ok: bool, failed: Vec<String> },
 }
 
-/// Download every missing or corrupt manifest entry into `model_dir`.
+/// Download every missing or corrupt file of the given bundle into
+/// `model_dir`.
 ///
 /// - Skips files that are present and checksum-match.
 /// - Removes stale files and re-downloads them.
 /// - Writes each file as `<name>.tmp` and only renames after SHA-256 matches.
 /// - Emits `DownloadEvent`s through `emit` so the UI can render progress.
 ///
+/// On success the chosen bundle id is persisted to `<model_dir>/bundle.json`
+/// so the loader's next boot picks it up without a wizard re-run.
+///
 /// Returns `Ok(())` only when every file ends up present + valid. Individual
 /// file failures are surfaced through `FileFailed` events + the `AllDone`
 /// terminal event; the error return is a coarse "not all models available"
 /// signal.
-pub fn download_missing<F>(model_dir: &Path, mut emit: F) -> Result<()>
+pub fn download_missing<F>(model_dir: &Path, bundle_id: BundleId, mut emit: F) -> Result<()>
 where
     F: FnMut(DownloadEvent) + Send,
 {
     std::fs::create_dir_all(model_dir)?;
+    let bundle = bundles::by_id(bundle_id);
     let mut failed: Vec<String> = Vec::new();
 
-    for entry in MODELS {
-        let dest = model_dir.join(entry.name);
+    for f in bundle.files {
+        let dest = model_dir.join(f.name);
         if dest.exists() {
             match sha256_file(&dest) {
-                Ok(hex) if hex.eq_ignore_ascii_case(entry.sha256_hex) => continue,
+                Ok(hex) if hex.eq_ignore_ascii_case(f.sha256_hex) => continue,
                 _ => {
                     let _ = std::fs::remove_file(&dest);
                 }
             }
         }
 
-        match download_one(entry, &dest, &mut emit) {
+        match download_one(bundle, f, &dest, &mut emit) {
+            // `f` is the BundleFile (manifest row) — download_one expects
+            // the same shape under the name `entry`.
             Ok(()) => emit(DownloadEvent::Verified {
-                name: entry.name.to_string(),
+                name: f.name.to_string(),
             }),
             Err(e) => {
                 let _ = std::fs::remove_file(dest.with_extension("tmp"));
                 emit(DownloadEvent::FileFailed {
-                    name: entry.name.to_string(),
+                    name: f.name.to_string(),
                     reason: e.to_string(),
                 });
-                failed.push(entry.name.to_string());
+                failed.push(f.name.to_string());
             }
         }
     }
 
     let ok = failed.is_empty();
+    if ok {
+        // Record the bundle choice so subsequent boots skip the wizard.
+        // Persisting after the terminal `all_done` would race with the
+        // wizard closing; do it *before* emitting so the next `ml_status`
+        // read sees a consistent picture.
+        super::manifest::write_selected_bundle(model_dir, bundle_id)?;
+    }
     emit(DownloadEvent::AllDone {
         ok,
         failed: failed.clone(),
@@ -243,11 +212,11 @@ where
     }
 }
 
-fn download_one<F>(entry: &ModelEntry, dest: &Path, emit: &mut F) -> Result<()>
+fn download_one<F>(bundle: &BundleSpec, entry: &BundleFile, dest: &Path, emit: &mut F) -> Result<()>
 where
     F: FnMut(DownloadEvent),
 {
-    let url = url_for(entry.name)
+    let url = url_for(bundle, entry.name)
         .ok_or_else(|| Error::Ingest(format!("no download URL for {}", entry.name)))?;
 
     let response = ureq::get(&url)
@@ -320,50 +289,49 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn sources_table_covers_every_manifest_entry() {
-        for entry in MODELS {
-            assert!(
-                SOURCES.iter().any(|s| s.name == entry.name),
-                "no download source for {}",
-                entry.name
-            );
-        }
-    }
-
-    #[test]
     fn url_for_returns_default_when_env_unset() {
         // `MV_MODEL_URL_CLIP_VISUAL` is not set in CI — we deliberately don't
         // flip env vars in tests (touching the global process env races other
         // tests and requires `unsafe` on newer editions). The default-path is
         // the load-bearing case anyway.
-        let src = &SOURCES[0];
-        let got = url_for(src.name).unwrap();
+        let bundle = bundles::by_id(BundleId::Full);
+        let file = bundle.files.first().expect("non-empty bundle");
+        let got = url_for(bundle, file.name).unwrap();
         // Either the default URL, or whatever the operator already exported.
-        let accept = got == src.default_url || got.starts_with("http");
+        let accept = got == file.default_url || got.starts_with("http");
         assert!(accept, "unexpected URL: {got}");
     }
 
     #[test]
     fn url_for_returns_none_for_unknown_name() {
-        assert!(url_for("not_a_model.onnx").is_none());
+        let bundle = bundles::by_id(BundleId::Full);
+        assert!(url_for(bundle, "not_a_model.onnx").is_none());
     }
 
     #[test]
     fn survey_reports_missing_when_dir_empty() {
         let tmp = TempDir::new().unwrap();
-        let s = survey(tmp.path()).unwrap();
-        assert_eq!(s.files.len(), MODELS.len());
+        let s = survey(tmp.path(), BundleId::Full).unwrap();
+        assert_eq!(s.files.len(), bundles::by_id(BundleId::Full).files.len());
         assert!(s.files.iter().all(|f| !f.present));
+        assert!(!s.all_present_valid);
+    }
+
+    #[test]
+    fn survey_covers_lite_bundle_too() {
+        let tmp = TempDir::new().unwrap();
+        let s = survey(tmp.path(), BundleId::Lite).unwrap();
+        assert_eq!(s.files.len(), bundles::by_id(BundleId::Lite).files.len());
         assert!(!s.all_present_valid);
     }
 
     #[test]
     fn survey_reports_invalid_when_file_has_wrong_checksum() {
         let tmp = TempDir::new().unwrap();
-        let entry = &MODELS[0];
+        let entry = &bundles::by_id(BundleId::Full).files[0];
         let path = tmp.path().join(entry.name);
         std::fs::write(&path, b"not the real model").unwrap();
-        let s = survey(tmp.path()).unwrap();
+        let s = survey(tmp.path(), BundleId::Full).unwrap();
         let row = s.files.iter().find(|f| f.name == entry.name).unwrap();
         assert!(row.present);
         assert!(!row.valid);

@@ -63,6 +63,8 @@ pub fn run() {
             commands::nearp::near_dup_list,
             commands::ml::ml_status,
             commands::ml::ml_models_enabled,
+            commands::ml::ml_bundle_options,
+            commands::ml::ml_bundle_selected,
             commands::ml::ml_models_status,
             commands::ml::ml_models_download,
             commands::ml::ml_runtime_reload,

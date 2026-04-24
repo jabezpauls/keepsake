@@ -94,6 +94,7 @@ mod inner {
             MlRuntime::load(MlConfig {
                 model_dir: models_dir,
                 execution_provider: ExecutionProvider::Auto,
+                bundle: mv_core::ml::bundles::BundleId::Full,
             })
             .expect("load runtime"),
         );

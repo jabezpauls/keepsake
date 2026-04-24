@@ -18,6 +18,7 @@ use ort::execution_providers::{
 };
 use ort::session::Session;
 
+use super::bundles::{self, BundleId, BundleSpec};
 use super::deps_probe;
 use super::manifest;
 use super::runtime::ExecutionProvider;
@@ -40,6 +41,15 @@ pub struct Sessions {
     /// Human-readable name of the provider the sessions actually loaded with.
     /// Reported back through `ml_status` so the UI can show "running on Cuda".
     pub provider_label: String,
+    /// Identifier of the bundle these sessions were loaded from — "full" or
+    /// "lite". Callers surface this through `ml_status` so the UI can show
+    /// which AI model family is active.
+    pub bundle: BundleId,
+    /// CLIP embedding dim actually emitted by `clip_visual` on this bundle.
+    /// Search code reads this so it doesn't have to re-inspect the session.
+    pub clip_dim: usize,
+    /// ArcFace embedding dim emitted by `arcface` on this bundle.
+    pub face_dim: usize,
 }
 
 /// Verify every manifest entry, then build one session per ONNX file. Returns
@@ -50,8 +60,13 @@ pub struct Sessions {
 /// and ORT picks the first one that actually initialises on the host. That
 /// means `ExecutionProvider::Auto` yields a CUDA-first box that silently
 /// falls through to CPU when CUDA isn't present.
-pub fn load_all(model_dir: &Path, preferred: ExecutionProvider) -> Result<Sessions> {
-    manifest::verify_all(model_dir)?;
+pub fn load_all(
+    model_dir: &Path,
+    preferred: ExecutionProvider,
+    bundle_id: BundleId,
+) -> Result<Sessions> {
+    let bundle: &BundleSpec = bundles::by_id(bundle_id);
+    manifest::verify_bundle(model_dir, bundle)?;
 
     let providers = build_provider_list(preferred);
     let provider_label = resolve_actual_provider(preferred);
@@ -61,11 +76,11 @@ pub fn load_all(model_dir: &Path, preferred: ExecutionProvider) -> Result<Sessio
     let scrfd = build_session(model_dir, "scrfd.onnx", &providers)?;
     let arcface = build_session(model_dir, "arcface.onnx", &providers)?;
 
-    // Output-shape assertions — these are the cheapest way to catch a model
-    // export that doesn't match what our post-processor expects. SCRFD is the
-    // riskiest: the `scrfd_10g_bnkps` export emits 9 tensors (3 strides × {score,
-    // bbox, kps}); other exports collapse into 1. CLIP + ArcFace are each a
-    // single pooled embedding.
+    // Output-count assertions. SCRFD is the riskiest: the `scrfd_*_bnkps`
+    // exports emit 9 tensors (3 strides × {score, bbox, kps}); other
+    // exports collapse into 1. CLIP + ArcFace are each a single pooled
+    // embedding. Dim checks happen below — by reading the session's own
+    // output-type metadata so we stay bundle-agnostic.
     if scrfd.outputs.len() != 9 {
         return Err(Error::MlModelShape(
             "scrfd.onnx: expected 9 output tensors (3 strides × score/bbox/kps)",
@@ -73,18 +88,44 @@ pub fn load_all(model_dir: &Path, preferred: ExecutionProvider) -> Result<Sessio
     }
     if clip_visual.outputs.len() != 1 {
         return Err(Error::MlModelShape(
-            "clip_visual.onnx: expected 1 output (pooled 768-d embedding)",
+            "clip_visual.onnx: expected 1 output (pooled embedding)",
         ));
     }
     if clip_textual.outputs.len() != 1 {
         return Err(Error::MlModelShape(
-            "clip_textual.onnx: expected 1 output (pooled 768-d embedding)",
+            "clip_textual.onnx: expected 1 output (pooled embedding)",
         ));
     }
     if arcface.outputs.len() != 1 {
         return Err(Error::MlModelShape(
-            "arcface.onnx: expected 1 output (512-d embedding)",
+            "arcface.onnx: expected 1 output (embedding)",
         ));
+    }
+
+    let clip_dim = infer_last_dim(&clip_visual, "clip_visual.onnx")?;
+    let clip_text_dim = infer_last_dim(&clip_textual, "clip_textual.onnx")?;
+    let face_dim = infer_last_dim(&arcface, "arcface.onnx")?;
+
+    if clip_dim != clip_text_dim {
+        return Err(Error::MlModelShape(
+            "CLIP visual / textual dim mismatch — mixed model files in bundle dir",
+        ));
+    }
+    if clip_dim != bundle.clip_dim {
+        tracing::warn!(
+            bundle = ?bundle.id,
+            expected = bundle.clip_dim,
+            got = clip_dim,
+            "CLIP dim differs from bundle spec — did the wrong weights land in the models dir?"
+        );
+    }
+    if face_dim != bundle.face_dim {
+        tracing::warn!(
+            bundle = ?bundle.id,
+            expected = bundle.face_dim,
+            got = face_dim,
+            "Face embedding dim differs from bundle spec"
+        );
     }
 
     Ok(Sessions {
@@ -93,7 +134,38 @@ pub fn load_all(model_dir: &Path, preferred: ExecutionProvider) -> Result<Sessio
         scrfd: Arc::new(Mutex::new(scrfd)),
         arcface: Arc::new(Mutex::new(arcface)),
         provider_label,
+        bundle: bundle.id,
+        clip_dim,
+        face_dim,
     })
+}
+
+/// Read the trailing dimension of a session's single output from its
+/// declared `ValueType`. ORT's session metadata gives us the tensor shape
+/// without running any inference — for dynamic-batch exports the first
+/// dim is `-1`, but the embedding dim is always concrete.
+fn infer_last_dim(session: &Session, name: &'static str) -> Result<usize> {
+    let out = session
+        .outputs
+        .first()
+        .ok_or(Error::MlModelShape("session has no outputs"))?;
+    match &out.output_type {
+        ort::value::ValueType::Tensor { shape, .. } => {
+            let last = shape.last().copied().unwrap_or(-1);
+            if last <= 0 {
+                tracing::warn!(
+                    model = name,
+                    dims = ?shape,
+                    "last tensor dim is dynamic — cannot assert bundle dim statically"
+                );
+                return Err(Error::MlModelShape(
+                    "output last dim is non-positive / dynamic",
+                ));
+            }
+            Ok(last as usize)
+        }
+        _ => Err(Error::MlModelShape("output is not a tensor")),
+    }
 }
 
 fn build_session(
@@ -213,7 +285,17 @@ mod tests {
     #[test]
     fn missing_model_dir_returns_models_unavailable() {
         let tmp = TempDir::new().unwrap();
-        let r = load_all(tmp.path(), ExecutionProvider::Cpu);
+        let r = load_all(tmp.path(), ExecutionProvider::Cpu, BundleId::Full);
+        assert!(matches!(r, Err(Error::ModelsUnavailable)));
+    }
+
+    #[test]
+    fn missing_model_dir_with_lite_also_errors_the_same_way() {
+        // Regression: Lite bundle goes through the same verify path, so a
+        // fresh dir is still `ModelsUnavailable` — not a bundle-not-found
+        // error.
+        let tmp = TempDir::new().unwrap();
+        let r = load_all(tmp.path(), ExecutionProvider::Cpu, BundleId::Lite);
         assert!(matches!(r, Err(Error::ModelsUnavailable)));
     }
 
@@ -264,10 +346,19 @@ mod tests {
         let Some(dir) = std::env::var_os("MV_MODELS") else {
             panic!("MV_MODELS not set — invoked with --ignored but env missing");
         };
-        let sessions = load_all(Path::new(&dir), ExecutionProvider::Auto)
+        // Default the Tier-B fixture to Full; override via MV_BUNDLE=lite to
+        // point at a lite-bundle fixture directory.
+        let bundle = match std::env::var("MV_BUNDLE").ok().as_deref() {
+            Some("lite") => BundleId::Lite,
+            _ => BundleId::Full,
+        };
+        let sessions = load_all(Path::new(&dir), ExecutionProvider::Auto, bundle)
             .expect("real weights should load cleanly");
-        // Spot-check input/output counts match CLIP/ArcFace expectations.
         assert_eq!(sessions.clip_visual.lock().unwrap().outputs.len(), 1);
         assert_eq!(sessions.arcface.lock().unwrap().outputs.len(), 1);
+        // The dim must match the bundle's spec when the fixture is well-formed.
+        let spec = bundles::by_id(bundle);
+        assert_eq!(sessions.clip_dim, spec.clip_dim);
+        assert_eq!(sessions.face_dim, spec.face_dim);
     }
 }

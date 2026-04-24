@@ -16,6 +16,7 @@ export type { MlReindexReport } from "./bindings/MlReindexReport";
 export type { ModelsStatus } from "./bindings/ModelsStatus";
 export type { ModelFileStatus } from "./bindings/ModelFileStatus";
 export type { DownloadEvent } from "./bindings/DownloadEvent";
+export type { BundleId } from "./bindings/BundleId";
 export type { PairingTicketView } from "./bindings/PairingTicketView";
 export type { PeerAcceptedView } from "./bindings/PeerAcceptedView";
 export type { ShareInviteView } from "./bindings/ShareInviteView";
@@ -173,8 +174,27 @@ export const api = {
     mlStatus: () => invoke<MlStatus>("ml_status"),
     mlModelsEnabled: () => invoke<boolean>("ml_models_enabled"),
     mlReindex: () => invoke<MlReindexReport>("ml_reindex"),
-    mlModelsStatus: () => invoke<import("./bindings/ModelsStatus").ModelsStatus>("ml_models_status"),
-    mlModelsDownload: () => invoke<null>("ml_models_download"),
+    mlBundleOptions: () =>
+        invoke<{
+            options: Array<{
+                id: string;
+                display_name: string;
+                description: string;
+                clip_dim: number;
+                face_dim: number;
+                approx_bytes: number;
+            }>;
+            recommended: string | null;
+        }>("ml_bundle_options"),
+    mlBundleSelected: () => invoke<string | null>("ml_bundle_selected"),
+    mlModelsStatus: (bundle?: string) =>
+        invoke<
+            import("./bindings/ModelsStatus").ModelsStatus & {
+                bundle?: string | null;
+            }
+        >("ml_models_status", { bundle }),
+    mlModelsDownload: (bundle?: string) =>
+        invoke<null>("ml_models_download", { bundle }),
     mlRuntimeReload: () => invoke<MlStatus>("ml_runtime_reload"),
 
     // --- peers (Phase 3.1) ---------------------------------------------

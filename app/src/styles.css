@@ -1788,3 +1788,60 @@ button.ml-badge:hover {
     background: var(--accent, #5eb6ff);
     transition: width 150ms ease-out;
 }
+
+.ml-bundle-choice {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.ml-bundle-option {
+    padding: 0.75rem 0.9rem;
+    background: var(--bg-2, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 120ms ease-out, border-color 120ms ease-out;
+}
+
+.ml-bundle-option:hover {
+    background: var(--bg-2, rgba(255, 255, 255, 0.06));
+}
+
+.ml-bundle-option.selected {
+    border-color: var(--accent, #5eb6ff);
+    background: var(--bg-2, rgba(94, 182, 255, 0.08));
+}
+
+.ml-bundle-option-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
+}
+
+.ml-bundle-rec-tag {
+    margin-left: auto;
+    padding: 0.12rem 0.45rem;
+    background: var(--accent, #5eb6ff);
+    color: #000;
+    border-radius: 3px;
+    font-size: 0.72em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.ml-bundle-option-desc {
+    color: var(--muted);
+    font-size: 0.88em;
+    margin-bottom: 0.2rem;
+}
+
+.ml-bundle-option-meta {
+    color: var(--muted);
+    font-size: 0.8em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

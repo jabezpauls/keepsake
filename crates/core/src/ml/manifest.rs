@@ -2,10 +2,10 @@
 //! SHA-256 of each. Loader uses this to reject stale/mismatched weights before
 //! they reach an `ort::Session`.
 //!
-//! URLs deliberately live in `scripts/download_models.sh`, not here: the repo
-//! does not redistribute weights (see architecture.md §9 and the Phase 2.1
-//! plan). Users source their own URLs at download time and pin to the
-//! checksums below.
+//! The catalog of expected files now lives in [`super::bundles`]; this
+//! module is the streaming-SHA verifier the loader + downloader share.
+//! `MODELS` remains as a legacy alias for the Full bundle so call sites
+//! that predate the bundle split keep compiling.
 //!
 //! **Updating a checksum** requires:
 //! 1. A re-run of Tier-B model-gated tests with the new weights.
@@ -17,6 +17,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 
+use super::bundles::{BundleId, BundleSpec};
 use crate::{Error, Result};
 
 /// One entry per model file we expect inside `model_dir`.
@@ -28,16 +29,11 @@ pub struct ModelEntry {
     pub sha256_hex: &'static str,
 }
 
-/// The five artefacts Phase 2.1 needs. Order is load order.
-///
-/// Checksums are **placeholders** until a real pin is chosen by running
-/// Tier-C evaluations and recording the result here + in
-/// `scripts/download_models.sh`. Placeholders are all zeroes so any real file
-/// trips `MlModelChecksum` on load until they are updated — this is intended:
-/// we fail closed rather than accept an unknown weight blob.
+/// The Full bundle's file set — kept as a `pub const` so the (now small
+/// number of) call sites that predate the bundle split still compile. New
+/// callers should query the selected bundle via
+/// [`super::bundles::by_id`] + [`BundleSpec::manifest_entries`] instead.
 pub const MODELS: &[ModelEntry] = &[
-    // Pinned to immich-app's ViT-L-14__openai ONNX exports (HuggingFace) —
-    // OpenCLIP ViT-L/14 trained on OpenAI data, visual + textual + tokenizer.
     ModelEntry {
         name: "clip_visual.onnx",
         sha256_hex: "2b02d572f59c509f4b97b9c54a868453cca1a652cd5d60e1d51d0052f055cb8c",
@@ -50,7 +46,6 @@ pub const MODELS: &[ModelEntry] = &[
         name: "clip_tokenizer.json",
         sha256_hex: "6d9109cc838977f3ca94a379eec36aecc7c807e1785cd729660ca2fc0171fb35",
     },
-    // Pinned to immich-app/buffalo_l — InsightFace SCRFD 10g + ArcFace R100.
     ModelEntry {
         name: "scrfd.onnx",
         sha256_hex: "5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91",
@@ -100,6 +95,49 @@ pub fn verify_all(model_dir: &Path) -> Result<()> {
     for entry in MODELS {
         verify_entry(model_dir, entry)?;
     }
+    Ok(())
+}
+
+/// Verify every entry declared by `bundle`. Semantically identical to
+/// [`verify_all`] but uses the bundle's pinned SHAs — the right path for
+/// Lite-bundle deployments where `MODELS` doesn't describe what's on disk.
+pub fn verify_bundle(model_dir: &Path, bundle: &BundleSpec) -> Result<()> {
+    for entry in bundle.manifest_entries() {
+        verify_entry(model_dir, &entry)?;
+    }
+    Ok(())
+}
+
+/// Filename (relative to `model_dir`) where the wizard records the bundle
+/// the user picked. Small JSON, written once per switch.
+pub const BUNDLE_FILE: &str = "bundle.json";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct BundlePersisted {
+    id: String,
+}
+
+/// Read the persisted bundle choice from `<model_dir>/bundle.json`. Returns
+/// `None` when the file is absent (fresh install) or malformed — the caller
+/// treats both as "wizard hasn't run yet".
+#[must_use]
+pub fn read_selected_bundle(model_dir: &Path) -> Option<BundleId> {
+    let path = model_dir.join(BUNDLE_FILE);
+    let raw = std::fs::read(&path).ok()?;
+    let doc: BundlePersisted = serde_json::from_slice(&raw).ok()?;
+    BundleId::from_str(&doc.id)
+}
+
+/// Persist the bundle choice so the next startup skips the wizard and
+/// boots straight into the right runtime. Creates `model_dir` if missing.
+pub fn write_selected_bundle(model_dir: &Path, id: BundleId) -> Result<()> {
+    std::fs::create_dir_all(model_dir)?;
+    let doc = BundlePersisted {
+        id: id.as_str().to_string(),
+    };
+    let raw = serde_json::to_vec_pretty(&doc)
+        .map_err(|e| Error::Ingest(format!("bundle.json serialize: {e}")))?;
+    std::fs::write(model_dir.join(BUNDLE_FILE), raw)?;
     Ok(())
 }
 

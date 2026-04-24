@@ -31,6 +31,7 @@ fn load_runtime_or_skip() -> Option<Arc<MlRuntime>> {
     let cfg = MlConfig {
         model_dir: dir,
         execution_provider: ExecutionProvider::Auto,
+        bundle: mv_core::ml::bundles::BundleId::Full,
     };
     match MlRuntime::load(cfg) {
         Ok(rt) => Some(Arc::new(rt)),
@@ -82,6 +83,7 @@ async fn iphone_golden_end_to_end() {
         let cfg = MlConfig {
             model_dir: models_dir().unwrap(),
             execution_provider: ExecutionProvider::Auto,
+            bundle: mv_core::ml::bundles::BundleId::Full,
         };
         worker.try_load_runtime(cfg);
         let _ = rt;
