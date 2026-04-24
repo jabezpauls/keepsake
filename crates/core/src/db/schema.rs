@@ -287,6 +287,27 @@ CREATE INDEX IF NOT EXISTS idx_share_status_col
     ON share_status(collection_id, changed_at DESC);
 ";
 
+/// DDL v9 — Phase 3 (D9). Pets classifier + manual flagging. Additive
+/// to `asset`:
+///
+/// - `is_pet` — plaintext 0/1 flag. Plaintext because pet-or-not is a
+///   coarse distinction that leaks almost nothing (your attacker
+///   already knows from filenames, dimensions, timing) and a plaintext
+///   column lets the Pets tab filter without a user-wide decrypt pass.
+/// - `pet_species_ct` — sealed species string ("dog" | "cat" | "bird"
+///   | custom). Encrypted because species is finer-grained and could
+///   reveal specific individuals once combined with a face-cluster
+///   membership table.
+///
+/// A future weight-backed classifier populates both at ingest; this
+/// slice ships the columns + a manual-flagging path so the UI surface
+/// is usable without ML.
+pub const DDL_V9: &str = r"
+ALTER TABLE asset ADD COLUMN is_pet INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE asset ADD COLUMN pet_species_ct BLOB;
+CREATE INDEX IF NOT EXISTS idx_asset_is_pet ON asset(is_pet) WHERE is_pet = 1;
+";
+
 /// DDL v8 — Phase 3 (D7). Public share links. Each row authorises one
 /// URL of the form `https://<host>/s/<pub_id>[#<secret_b64>]` to
 /// render a collection through a browser viewer. `wrapped_key` holds
