@@ -100,18 +100,14 @@ pub fn try_bootstrap_runtime(session: &Session, vault_root: &Path) {
         let model_dir = std::env::var_os("MV_MODELS")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| vault_root.join("models"));
-        // Prefer CUDA when ml-cuda is compiled in; fall back to Auto otherwise.
-        // Auto's provider list includes CoreML which can poison registration
-        // on Linux and silently drop back to CPU — forcing CUDA when built
-        // against it keeps nvidia-smi honest.
-        let execution_provider = if cfg!(feature = "ml-cuda") {
-            mv_core::ml::ExecutionProvider::Cuda
-        } else {
-            mv_core::ml::ExecutionProvider::Auto
-        };
+        // Always `Auto`. ORT silently ignores providers whose runtime deps
+        // don't resolve, and `mv_core::ml::loader::resolve_actual_provider`
+        // probes each candidate's dylibs so `ml_status.execution_provider`
+        // reports the provider that actually registered — a build with
+        // `ml-cuda` on a CPU-only machine just falls through to CPU cleanly.
         let cfg = mv_core::ml::MlConfig {
             model_dir,
-            execution_provider,
+            execution_provider: mv_core::ml::ExecutionProvider::Auto,
         };
         match mv_core::ml::MlRuntime::load(cfg) {
             Ok(rt) => {
