@@ -6,6 +6,7 @@
 //! stripped in `errors::AppError::from(...)`).
 
 pub mod albums;
+pub mod analytics;
 pub mod auth;
 pub mod export;
 pub mod map;

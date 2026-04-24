@@ -345,6 +345,68 @@ pub fn list_timeline_page(
 
 // --------- COLLECTIONS --------------------------------------------------------
 
+/// Delete every `kind='trip'` collection (and its members) owned by
+/// `user_id`. Used by the trip-detect re-run path, which rebuilds all
+/// trips from scratch rather than trying to diff.
+pub fn delete_trips_for_user(conn: &Connection, user_id: i64) -> Result<usize> {
+    // Drop members first (no FK ON DELETE CASCADE in schema).
+    conn.execute(
+        r"DELETE FROM collection_member
+          WHERE collection_id IN (
+              SELECT id FROM collection WHERE owner_id = ?1 AND kind = 'trip'
+          )",
+        params![user_id],
+    )?;
+    let n = conn.execute(
+        "DELETE FROM collection WHERE owner_id = ?1 AND kind = 'trip'",
+        params![user_id],
+    )?;
+    Ok(n)
+}
+
+/// List every (asset_id, gps_ct, taken_at_utc_day) tuple owned by
+/// `user_id` where both GPS ciphertext and the day stamp are non-null.
+/// Trip detection needs both — a photo without a GPS tag can't join a
+/// trip cluster. Distinct from [`list_assets_with_gps`], which is used
+/// by the map view and takes an `AssetFilter` instead of an owner id.
+pub fn list_geo_tagged_assets_for_user(
+    conn: &Connection,
+    user_id: i64,
+) -> Result<Vec<(i64, Vec<u8>, i64)>> {
+    let mut stmt = conn.prepare(
+        r"SELECT a.id, a.gps_ct, a.taken_at_utc_day
+          FROM asset a
+          JOIN source s ON s.id = a.source_id
+          WHERE s.owner_id = ?1
+            AND a.gps_ct IS NOT NULL
+            AND a.taken_at_utc_day IS NOT NULL",
+    )?;
+    let rows = stmt
+        .query_map(params![user_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Vec<u8>>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Load every `kind='trip'` collection for a user, newest (by id) first.
+pub fn list_trip_collections(conn: &Connection, user_id: i64) -> Result<Vec<CollectionRow>> {
+    let mut stmt = conn.prepare(
+        r"SELECT id, owner_id, kind, name_ct, has_password, password_salt, created_at
+          FROM collection
+          WHERE owner_id = ?1 AND kind = 'trip'
+          ORDER BY id DESC",
+    )?;
+    let rows = stmt
+        .query_map(params![user_id], row_to_collection)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 pub fn insert_collection(
     conn: &Connection,
     owner_id: i64,

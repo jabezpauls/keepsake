@@ -329,6 +329,20 @@ pub struct PeerAcceptedView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+pub struct TripView {
+    #[ts(type = "number")]
+    pub id: i64,
+    /// Decrypted trip name — e.g. "Trip · 12 photos · day 20050..20055".
+    /// D2 (reverse geocoding) will replace this with "Tokyo, 2024".
+    pub name: String,
+    #[ts(type = "number")]
+    pub member_count: i64,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 pub struct ShareRecipientView {
     /// Peer node id (Ed25519) in hex — matches what peer_list returns.
     pub peer_node_id_hex: String,

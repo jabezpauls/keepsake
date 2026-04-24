@@ -24,7 +24,9 @@ export type View =
     | { kind: "people" }
     | { kind: "person"; id: number; name: string | null }
     | { kind: "duplicates" }
-    | { kind: "peers" };
+    | { kind: "peers" }
+    | { kind: "trips" }
+    | { kind: "memories" };
 
 interface SessionStore {
     session: SessionHandle | null;

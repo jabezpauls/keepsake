@@ -71,6 +71,8 @@ pub fn run() {
             commands::share::revoke_album_share,
             commands::share::list_incoming_shares,
             commands::share::accept_incoming_share,
+            commands::analytics::detect_trips_run,
+            commands::analytics::list_trips,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

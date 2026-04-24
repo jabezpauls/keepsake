@@ -1317,3 +1317,65 @@ p.error {
     font-size: 0.85rem;
     color: var(--muted);
 }
+
+/* ===== Phase 3.3 trips tab ========================================== */
+.trips-view {
+    padding: 1rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.trips-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.trips-nav h2 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.trips-nav .spacer {
+    flex: 1;
+}
+
+.trip-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 0.75rem;
+    overflow-y: auto;
+}
+
+.trip-card {
+    width: 100%;
+    padding: 0.75rem;
+    background: var(--bg-2, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.trip-card:hover {
+    border-color: var(--accent);
+}
+
+.trip-name {
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.trip-meta {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
