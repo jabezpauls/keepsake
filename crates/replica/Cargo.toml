@@ -1,0 +1,32 @@
+[package]
+name = "mv-replica"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Media Vault offsite replica — headless cipher-text-only iroh peer (Phase 3 D8)."
+
+[[bin]]
+name = "mv-replica"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio = { workspace = true }
+chrono.workspace = true
+hex.workspace = true
+secrecy.workspace = true
+
+iroh.workspace = true
+iroh-gossip.workspace = true
+iroh-blobs.workspace = true
+iroh-docs.workspace = true
+rusqlite.workspace = true
+
+mv-core = { path = "../core" }
+mv-sync = { path = "../sync" }

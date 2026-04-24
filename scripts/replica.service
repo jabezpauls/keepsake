@@ -1,0 +1,39 @@
+[Unit]
+Description=Media Vault offsite replica (ciphertext-only iroh peer)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Run as a non-privileged system user. Create with:
+#   sudo useradd --system --home /var/lib/mv-replica --shell /usr/sbin/nologin mv-replica
+User=mv-replica
+Group=mv-replica
+Environment=MV_REPLICA_ROOT=/var/lib/mv-replica
+Environment=RUST_LOG=info
+# Adjust the binary path to wherever you've installed mv-replica.
+ExecStart=/usr/local/bin/mv-replica
+Restart=on-failure
+RestartSec=5s
+
+# Hardening — replica holds ciphertext only, so we can lock it down hard.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/mv-replica
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+# Replica needs UDP for iroh QUIC; no raw sockets needed.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

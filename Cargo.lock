@@ -4046,6 +4046,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "mv-replica"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "hex",
+ "iroh",
+ "iroh-blobs",
+ "iroh-docs",
+ "iroh-gossip",
+ "mv-core",
+ "mv-sync",
+ "rusqlite",
+ "secrecy",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "mv-sync"
 version = "0.1.0"
 dependencies = [
