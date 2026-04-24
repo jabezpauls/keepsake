@@ -19,7 +19,7 @@ workspace = true
 # with `--features ml-models`. The rest of the pipeline (pHash, near-dup,
 # search metadata filters, face/person CRUD) works without the flag.
 default = []
-ml-models = ["dep:ort", "dep:tokenizers", "dep:ndarray", "dep:pathfinding", "dep:sha2"]
+ml-models = ["dep:ort", "dep:tokenizers", "dep:ndarray", "dep:pathfinding", "dep:sha2", "dep:libloading", "dep:ureq"]
 # Optional execution-provider passthroughs. Off by default; pick one based on
 # the box you're targeting. No-op when `ml-models` is off.
 ml-cuda = ["ml-models", "ort?/cuda"]
@@ -68,6 +68,8 @@ tokenizers = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 pathfinding = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+libloading = { workspace = true, optional = true }
+ureq = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

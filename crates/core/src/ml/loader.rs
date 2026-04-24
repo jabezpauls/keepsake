@@ -18,6 +18,7 @@ use ort::execution_providers::{
 };
 use ort::session::Session;
 
+use super::deps_probe;
 use super::manifest;
 use super::runtime::ExecutionProvider;
 use crate::{Error, Result};
@@ -53,7 +54,7 @@ pub fn load_all(model_dir: &Path, preferred: ExecutionProvider) -> Result<Sessio
     manifest::verify_all(model_dir)?;
 
     let providers = build_provider_list(preferred);
-    let provider_label = provider_list_label(preferred);
+    let provider_label = resolve_actual_provider(preferred);
 
     let clip_visual = build_session(model_dir, "clip_visual.onnx", &providers)?;
     let clip_textual = build_session(model_dir, "clip_textual.onnx", &providers)?;
@@ -135,13 +136,71 @@ fn build_provider_list(preferred: ExecutionProvider) -> Vec<ExecutionProviderDis
     }
 }
 
-fn provider_list_label(preferred: ExecutionProvider) -> String {
-    match preferred {
-        ExecutionProvider::Auto => "Auto".to_string(),
-        ExecutionProvider::Cpu => "Cpu".to_string(),
-        ExecutionProvider::Cuda => "Cuda".to_string(),
-        ExecutionProvider::CoreMl => "CoreMl".to_string(),
+/// Resolve the provider ONNX Runtime is actually going to register for this
+/// build, by dlopen-probing each candidate's runtime dylibs. Returns the name
+/// that maps to the `ml_status.execution_provider` badge.
+///
+/// When the caller requested a GPU provider but the probe says the deps don't
+/// resolve, we emit a single WARN with the missing library names so operators
+/// can act — see `docs/ml-cuda-setup.md`. Silent mode is intentional on pure
+/// `Auto` without an `ml-cuda` build, since CPU is the expected path there.
+fn resolve_actual_provider(preferred: ExecutionProvider) -> String {
+    let explicit_gpu = matches!(
+        preferred,
+        ExecutionProvider::Cuda | ExecutionProvider::CoreMl
+    );
+    let gpu_expected_from_build = cfg!(feature = "ml-cuda") || cfg!(feature = "ml-coreml");
+
+    let (label, probe) = match preferred {
+        ExecutionProvider::Cpu => ("Cpu".to_string(), None),
+        ExecutionProvider::Cuda => {
+            let p = deps_probe::probe_cuda();
+            let label = if p.all_resolved { "Cuda" } else { "Cpu" };
+            (label.to_string(), Some(p))
+        }
+        ExecutionProvider::CoreMl => {
+            let p = deps_probe::probe_coreml();
+            let label = if p.all_resolved { "CoreMl" } else { "Cpu" };
+            (label.to_string(), Some(p))
+        }
+        ExecutionProvider::Auto => {
+            let cuda = deps_probe::probe_cuda();
+            if cuda.all_resolved {
+                ("Cuda".to_string(), None)
+            } else if cfg!(target_vendor = "apple") {
+                let cm = deps_probe::probe_coreml();
+                let label = if cm.all_resolved { "CoreMl" } else { "Cpu" };
+                (label.to_string(), Some(cm))
+            } else {
+                // Linux/Windows without CUDA → CPU is the answer. Only carry
+                // the probe forward when this build explicitly wanted GPU,
+                // so users who haven't opted into ml-cuda don't see a noisy
+                // warning every startup.
+                let carry = if gpu_expected_from_build {
+                    Some(cuda)
+                } else {
+                    None
+                };
+                ("Cpu".to_string(), carry)
+            }
+        }
+    };
+
+    if label == "Cpu" && (explicit_gpu || gpu_expected_from_build) {
+        if let Some(p) = probe.as_ref() {
+            if !p.all_resolved {
+                tracing::warn!(
+                    requested = ?preferred,
+                    missing = ?p.missing,
+                    provider = p.provider,
+                    "ML runtime: GPU-capable build but dependencies unresolved — falling back to CPU. \
+                     See docs/ml-cuda-setup.md to install the missing libraries."
+                );
+            }
+        }
     }
+
+    label
 }
 
 // =========== TESTS ============================================================
@@ -180,11 +239,21 @@ mod tests {
     }
 
     #[test]
-    fn provider_labels_are_stable() {
-        assert_eq!(provider_list_label(ExecutionProvider::Auto), "Auto");
-        assert_eq!(provider_list_label(ExecutionProvider::Cpu), "Cpu");
-        assert_eq!(provider_list_label(ExecutionProvider::Cuda), "Cuda");
-        assert_eq!(provider_list_label(ExecutionProvider::CoreMl), "CoreMl");
+    fn resolve_reports_cpu_when_user_asked_for_cpu() {
+        // Explicit CPU → never probe, never label GPU. Independent of host.
+        assert_eq!(resolve_actual_provider(ExecutionProvider::Cpu), "Cpu");
+    }
+
+    #[test]
+    fn resolve_never_returns_the_bare_auto_string() {
+        // Previous behaviour returned literal "Auto" here, which lied to the
+        // UI when CUDA was compiled in but fell back at runtime. Regardless
+        // of host, `Auto` must resolve to a concrete provider name.
+        let label = resolve_actual_provider(ExecutionProvider::Auto);
+        assert!(
+            matches!(label.as_str(), "Cuda" | "CoreMl" | "Cpu"),
+            "unexpected label: {label}"
+        );
     }
 
     // Tier-B: requires real model weights at MV_MODELS.
