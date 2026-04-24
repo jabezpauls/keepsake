@@ -149,7 +149,7 @@ export default function ShareAlbumModal({ albumId, albumName, onClose }: Props) 
                     </section>
                 )}
 
-                <PublicLinksPanel albumId={albumId} />
+                <PublicLinksPanel albumId={albumId} albumName={albumName} />
 
                 {(shareMut.isError || revokeMut.isError) && (
                     <p className="error">
@@ -161,7 +161,13 @@ export default function ShareAlbumModal({ albumId, albumName, onClose }: Props) 
     );
 }
 
-function PublicLinksPanel({ albumId }: { albumId: number }) {
+function PublicLinksPanel({
+    albumId,
+    albumName,
+}: {
+    albumId: number;
+    albumName: string;
+}) {
     const queryClient = useQueryClient();
     const links = useQuery({
         queryKey: ["public-links"],
@@ -248,6 +254,12 @@ function PublicLinksPanel({ albumId }: { albumId: number }) {
                 <button onClick={create} disabled={busy}>
                     {busy ? "Creating…" : "Create link"}
                 </button>
+                <ExportBundleButton
+                    albumId={albumId}
+                    albumName={albumName}
+                    password={password}
+                    expiry={expiry}
+                />
             </div>
             {err && <p className="error">{err}</p>}
             {lastCreated && (
@@ -291,5 +303,75 @@ function PublicLinksPanel({ albumId }: { albumId: number }) {
                 </ul>
             )}
         </section>
+    );
+}
+
+function ExportBundleButton({
+    albumId,
+    albumName,
+    password,
+    expiry,
+}: {
+    albumId: number;
+    albumName: string;
+    password: string;
+    expiry: "never" | "7d" | "30d";
+}) {
+    const [busy, setBusy] = useState(false);
+    const [report, setReport] = useState<
+        import("../../bindings/PublicLinkBundleReport").PublicLinkBundleReport | null
+    >(null);
+    const [err, setErr] = useState<string | null>(null);
+
+    const go = async () => {
+        setErr(null);
+        try {
+            const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
+            const picked = await openDialog({ directory: true, multiple: false });
+            if (typeof picked !== "string") return;
+            setBusy(true);
+            const now = Math.floor(Date.now() / 1000);
+            const expiresAt =
+                expiry === "never"
+                    ? null
+                    : expiry === "7d"
+                      ? now + 7 * 86400
+                      : now + 30 * 86400;
+            const r = await api.exportPublicLinkBundle(
+                albumId,
+                albumName,
+                password.trim() || null,
+                expiresAt,
+                picked,
+            );
+            setReport(r);
+        } catch (e) {
+            setErr(String(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <>
+            <button onClick={go} disabled={busy}>
+                {busy ? "Exporting…" : "Create + export bundle"}
+            </button>
+            {err && <p className="error">{err}</p>}
+            {report && (
+                <div className="public-link-new">
+                    <strong>Bundle written:</strong>
+                    <p>
+                        <code>{report.file_path}</code>
+                    </p>
+                    <p className="muted">
+                        {report.asset_count} thumbnails bundled.{" "}
+                        {report.has_password
+                            ? "Opens in any browser; recipient enters password."
+                            : `Open the file directly, or host it and append #${report.url_fragment} to the URL.`}
+                    </p>
+                </div>
+            )}
+        </>
     );
 }

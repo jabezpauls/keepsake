@@ -600,3 +600,194 @@ async fn revoke_public_link_impl(state: &AppState, id: i64) -> AppResult<bool> {
     .await
     .map_err(AppError::from)?
 }
+
+// =========== Public-link bundle export (D7a) ==================================
+
+use mv_core::public_link_bundle::{
+    render_html, seal_thumb_for_bundle, BundleAsset, BundleManifest,
+};
+use std::io::Write as _;
+
+const BUNDLE_MAX_ASSETS: usize = 50;
+const BUNDLE_THUMB_SIZE: u32 = 256;
+
+#[tauri::command]
+pub async fn export_public_link_bundle(
+    state: State<'_, AppState>,
+    collection_id: i64,
+    album_name: String,
+    password: Option<String>,
+    expires_at: Option<i64>,
+    dest_path: String,
+) -> Result<crate::dto::PublicLinkBundleReport, String> {
+    wire(
+        export_public_link_bundle_impl(
+            &state,
+            collection_id,
+            album_name,
+            password,
+            expires_at,
+            dest_path,
+        )
+        .await,
+    )
+}
+
+async fn export_public_link_bundle_impl(
+    state: &AppState,
+    collection_id: i64,
+    album_name: String,
+    password: Option<String>,
+    expires_at: Option<i64>,
+    dest_path: String,
+) -> AppResult<crate::dto::PublicLinkBundleReport> {
+    let (db_handle, cas, user_id, mk_bytes, default_cid, default_ck_bytes, unlocked_override_bytes) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (
+            s.db.clone(),
+            s.cas.clone(),
+            s.user.user_id,
+            *s.user.master_key.as_bytes(),
+            s.default_collection_id,
+            *s.default_collection_key.as_bytes(),
+            s.unlocked_albums.get(&collection_id).map(|k| *k.as_bytes()),
+        )
+    };
+
+    let pw_secret = password.map(secrecy::SecretString::from);
+
+    let out =
+        tokio::task::spawn_blocking(move || -> AppResult<crate::dto::PublicLinkBundleReport> {
+            let new_link = mv_core::public_link::generate(pw_secret.as_ref())?;
+            let guard = db_handle.blocking_lock();
+
+            // Confirm ownership.
+            let owner_check: Option<i64> = guard
+                .query_row(
+                    "SELECT owner_id FROM collection WHERE id = ?1",
+                    rusqlite::params![collection_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            match owner_check {
+                Some(owner) if owner == user_id => {}
+                _ => return Err(AppError::NotFound),
+            }
+
+            // Persist the link row.
+            let now = chrono::Utc::now().timestamp();
+            mv_core::db::queries::insert_public_link(
+                &guard,
+                collection_id,
+                user_id,
+                &new_link.pub_id,
+                new_link.has_password,
+                new_link.password_salt.as_ref(),
+                new_link.wrapped_key.as_deref(),
+                expires_at,
+                now,
+            )?;
+
+            // Resolve collection key so we can fetch thumbnails.
+            let override_ck =
+                unlocked_override_bytes.map(mv_core::crypto::CollectionKey::from_bytes);
+            let ck = super::albums::collection_key_for(
+                mk_bytes,
+                &guard,
+                user_id,
+                collection_id,
+                default_cid,
+                default_ck_bytes,
+                override_ck.as_ref(),
+            )?;
+
+            // Pull up to BUNDLE_MAX_ASSETS members.
+            let member_ids =
+                mv_core::db::queries::list_collection_member_ids(&guard, collection_id)?;
+            let members_to_bundle: Vec<i64> =
+                member_ids.into_iter().take(BUNDLE_MAX_ASSETS).collect();
+
+            let mut assets: Vec<BundleAsset> = Vec::with_capacity(members_to_bundle.len());
+            for aid in &members_to_bundle {
+                let Some(row) = mv_core::db::queries::get_asset(&guard, *aid)? else {
+                    continue;
+                };
+                let fk = match mv_core::crypto::unwrap_file_key(&row.wrapped_file_key, &ck) {
+                    Ok(fk) => fk,
+                    Err(_) => continue,
+                };
+                // Prefer a pre-rendered thumb256 derivative; fall back to
+                // reading the original and hoping the image crate can
+                // decode it. Phase 1 always writes thumb256 at ingest.
+                let cas_ref = mv_core::db::queries::get_derivative(&guard, *aid, "thumb256")?
+                    .unwrap_or(row.cas_ref);
+                let plain = match cas.get(&cas_ref, &fk) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                // Down-size guard: skip anything over 1 MB so the bundle
+                // HTML stays openable.
+                if plain.len() > 1_000_000 {
+                    continue;
+                }
+                let sealed = seal_thumb_for_bundle(&plain, &new_link.viewer_key)?;
+                let mime = if row.mime.starts_with("video/") {
+                    "image/webp".to_string()
+                } else {
+                    row.mime.clone()
+                };
+                assets.push(BundleAsset {
+                    id: *aid,
+                    mime,
+                    thumb_b64: sealed,
+                });
+            }
+
+            let manifest = BundleManifest {
+                version: 1,
+                pub_id: new_link.pub_id_b32.clone(),
+                has_password: new_link.has_password,
+                salt_b64: new_link.password_salt.as_ref().map(|s| b64(s)),
+                wrapped_key_b64: new_link.wrapped_key.as_ref().map(|w| b64(w)),
+                expires_at,
+                assets,
+            };
+
+            let html = render_html(&manifest, &album_name)?;
+            let url_fragment = new_link.url_fragment();
+            let pub_id_b32 = new_link.pub_id_b32;
+            let has_password = new_link.has_password;
+
+            // Write to dest_path. If it's a directory, append index.html.
+            let dp = std::path::PathBuf::from(&dest_path);
+            let final_path = if dp.is_dir() {
+                dp.join(format!("keepsake-{}.html", pub_id_b32))
+            } else {
+                dp
+            };
+            let mut f = std::fs::File::create(&final_path)?;
+            f.write_all(html.as_bytes())?;
+
+            let _ = BUNDLE_THUMB_SIZE; // silence unused-const warning
+
+            Ok(crate::dto::PublicLinkBundleReport {
+                pub_id_b32,
+                url_fragment,
+                has_password,
+                asset_count: manifest.assets.len() as u32,
+                file_path: final_path.to_string_lossy().into_owned(),
+                expires_at,
+            })
+        })
+        .await
+        .map_err(AppError::from)??;
+
+    Ok(out)
+}
+
+fn b64(bytes: &[u8]) -> String {
+    use base64::engine::general_purpose::STANDARD as B64;
+    use base64::Engine;
+    B64.encode(bytes)
+}

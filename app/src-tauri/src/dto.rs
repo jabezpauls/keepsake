@@ -427,6 +427,23 @@ pub struct PetAssetView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+/// D7a bundle-export result. `file_path` is an absolute filesystem
+/// path to the HTML written on disk. `url_fragment` is populated for
+/// no-password links so the sender can append `#<fragment>` when
+/// hosting the HTML over HTTP; password-gated bundles leave it empty.
+pub struct PublicLinkBundleReport {
+    pub pub_id_b32: String,
+    pub url_fragment: String,
+    pub has_password: bool,
+    #[ts(type = "number")]
+    pub asset_count: u32,
+    pub file_path: String,
+    #[ts(type = "number | null")]
+    pub expires_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 /// D7 public share-link, as returned to the UI. `url_fragment` is only
 /// populated on create — a subsequent `list_public_links` call can't
 /// recover the viewer key, so re-sharing a lost link requires creating

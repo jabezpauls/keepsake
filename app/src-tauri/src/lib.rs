@@ -76,6 +76,7 @@ pub fn run() {
             commands::share::create_public_link,
             commands::share::list_public_links,
             commands::share::revoke_public_link,
+            commands::share::export_public_link_bundle,
             commands::pets::set_asset_pet,
             commands::pets::list_pet_assets,
             commands::analytics::detect_trips_run,
