@@ -14,6 +14,7 @@ pub mod ml;
 pub mod nearp;
 pub mod peer;
 pub mod people;
+pub mod pets;
 pub mod search;
 pub mod share;
 pub mod sources;

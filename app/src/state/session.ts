@@ -28,7 +28,8 @@ export type View =
     | { kind: "trips" }
     | { kind: "memories" }
     | { kind: "smart_albums" }
-    | { kind: "smart_album"; id: number; name: string };
+    | { kind: "smart_album"; id: number; name: string }
+    | { kind: "pets" };
 
 interface SessionStore {
     session: SessionHandle | null;

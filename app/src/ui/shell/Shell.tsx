@@ -17,6 +17,7 @@ import Trips from "../trips/Trips";
 import Memories from "../memories/Memories";
 import SmartAlbums from "../smart_albums/SmartAlbums";
 import SmartAlbumDetail from "../smart_albums/SmartAlbumDetail";
+import Pets from "../pets/Pets";
 
 export default function Shell() {
     const view = useSession((s) => s.view);
@@ -80,6 +81,7 @@ export default function Shell() {
                 {navButton("search", "Search")}
                 {navButton("map", "Map")}
                 {navButton("people", "People")}
+                {navButton("pets", "Pets")}
                 {navButton("trips", "Trips")}
                 {navButton("memories", "Memories")}
                 {navButton(
@@ -128,6 +130,7 @@ export default function Shell() {
                 {view.kind === "smart_album" && (
                     <SmartAlbumDetail id={view.id} name={view.name} />
                 )}
+                {view.kind === "pets" && <Pets />}
             </section>
         </div>
     );

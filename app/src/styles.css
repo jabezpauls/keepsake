@@ -1633,3 +1633,89 @@ p.error {
     margin-left: auto;
     color: #c77;
 }
+
+/* ----- Pets (D9) --------------------------------------------------------- */
+
+.pets-view {
+    padding: 1rem 1.5rem;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.pets-nav {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.pet-group {
+    margin-top: 1.25rem;
+}
+
+.pet-group h3 {
+    margin: 0.25rem 0 0.5rem;
+}
+
+.pet-group .count {
+    color: var(--muted, rgba(255, 255, 255, 0.55));
+    font-weight: 400;
+}
+
+.pet-strip {
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    padding-bottom: 0.4rem;
+}
+
+.pet-thumb {
+    flex: 0 0 auto;
+    width: 128px;
+    height: 128px;
+    padding: 0;
+    border: 0;
+    background: var(--bg-1, rgba(255, 255, 255, 0.04));
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.pet-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.pet-thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    background: var(--bg-2, rgba(255, 255, 255, 0.05));
+}
+
+.pet-flag-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+}
+
+.pet-flag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.pet-flag-row input[type="text"] {
+    flex: 1 1 auto;
+    min-width: 10rem;
+    padding: 0.35rem 0.5rem;
+    background: var(--bg-2, rgba(0, 0, 0, 0.25));
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+    color: inherit;
+    border-radius: 4px;
+}

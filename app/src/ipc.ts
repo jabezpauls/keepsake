@@ -208,6 +208,12 @@ export const api = {
     revokePublicLink: (id: number) =>
         invoke<boolean>("revoke_public_link", { id }),
 
+    // --- pets (D9) ------------------------------------------------------
+    setAssetPet: (assetId: number, isPet: boolean, species: string | null) =>
+        invoke<boolean>("set_asset_pet", { assetId, isPet, species }),
+    listPetAssets: () =>
+        invoke<import("./bindings/PetAssetView").PetAssetView[]>("list_pet_assets"),
+
     // --- analytics (Phase 3.3+) ----------------------------------------
     detectTripsRun: () => invoke<number>("detect_trips_run"),
     listTrips: () => invoke<TripView[]>("list_trips"),
