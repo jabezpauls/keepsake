@@ -37,6 +37,16 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Stub bundled ORT dylib for cargo check
+        # `tauri.linux.conf.json` declares `resources/libonnxruntime.so`
+        # as a bundle resource; Tauri's build script verifies the file
+        # exists even during `cargo check`. The real dylib is staged by
+        # release.yml before bundling — here we just need a zero-byte
+        # placeholder so the resource path resolves.
+        run: |
+          mkdir -p app/src-tauri/resources
+          : > app/src-tauri/resources/libonnxruntime.so
+
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
@@ -69,14 +79,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: audit-tools
       - name: cargo-audit
         uses: rustsec/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
+        # Run cargo-deny natively rather than via EmbarkStudios's Docker
+        # action — the action runs in a musl container and fails to honour
+        # `rust-toolchain.toml` (rustup tries to install a musl toolchain
+        # the container doesn't have). The CLI is unaffected.
+        run: |
+          if ! command -v cargo-deny >/dev/null; then
+            cargo install --locked cargo-deny
+          fi
+          cargo deny --all-features check
 
   frontend:
     name: Frontend — lint / typecheck / test
