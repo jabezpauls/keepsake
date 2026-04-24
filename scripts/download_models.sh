@@ -37,13 +37,12 @@ cd "$DEST"
 
 # Each entry: env_var|filename|sha256
 # Keep in lock-step with the MODELS table in crates/core/src/ml/manifest.rs.
-PLACEHOLDER="0000000000000000000000000000000000000000000000000000000000000000"
 MODELS=(
-  "MV_MODEL_URL_CLIP_VISUAL|clip_visual.onnx|${PLACEHOLDER}"
-  "MV_MODEL_URL_CLIP_TEXTUAL|clip_textual.onnx|${PLACEHOLDER}"
-  "MV_MODEL_URL_CLIP_TOKENIZER|clip_tokenizer.json|${PLACEHOLDER}"
-  "MV_MODEL_URL_SCRFD|scrfd.onnx|${PLACEHOLDER}"
-  "MV_MODEL_URL_ARCFACE|arcface.onnx|${PLACEHOLDER}"
+  "MV_MODEL_URL_CLIP_VISUAL|clip_visual.onnx|2b02d572f59c509f4b97b9c54a868453cca1a652cd5d60e1d51d0052f055cb8c"
+  "MV_MODEL_URL_CLIP_TEXTUAL|clip_textual.onnx|9fbe72ea8d36c2effaccedcf7249e3729ad0d9b4af6604b433ecdd0105663c9c"
+  "MV_MODEL_URL_CLIP_TOKENIZER|clip_tokenizer.json|6d9109cc838977f3ca94a379eec36aecc7c807e1785cd729660ca2fc0171fb35"
+  "MV_MODEL_URL_SCRFD|scrfd.onnx|5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91"
+  "MV_MODEL_URL_ARCFACE|arcface.onnx|4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43"
 )
 
 verify_sha() {
