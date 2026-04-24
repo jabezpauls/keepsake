@@ -5,6 +5,13 @@ Cargo.lock.*
 *.rlib
 *.rmeta
 
+# Vendored runtimes (ONNX / CUDA — operators fetch locally, never ship)
+/vendor
+
+# Local experiments / ad-hoc probes
+/crates/core/examples/ml_probe.rs
+/crates/core/examples/search_probe.rs
+
 # Node / pnpm
 node_modules
 .pnpm-store

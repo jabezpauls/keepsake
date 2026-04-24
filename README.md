@@ -1,6 +1,6 @@
-# Media Vault
+# Keepsake
 
-Local-first, end-to-end encrypted, peer-to-peer personal media management. Ingest messy real-world backup dumps (iPhone folders, Google Takeout, generic directories) into a deduplicated encrypted library with per-album passwords and a hidden vault.
+Local-first, end-to-end encrypted, peer-to-peer personal media management. Ingest messy real-world backup dumps (iPhone folders, Google Takeout, generic directories) into a deduplicated encrypted library with per-album passwords, a hidden vault, on-device ML search, and optional peer-to-peer album sharing — no cloud, no server.
 
 Build instructions, frozen architecture contracts, and phase-by-phase acceptance criteria live in [`plans/`](./plans/README.md). Start there.
 
@@ -32,6 +32,10 @@ cargo tauri dev
 The default vault lives at `$XDG_DATA_HOME/media-vault` (falls back to
 `~/.local/share/media-vault`). Override with `MV_VAULT_ROOT=/some/path`.
 
+> The on-disk directory and the `MV_*` env vars still carry the
+> project's pre-rebrand name. Existing installs keep working
+> unchanged; a rename migration is tracked as a follow-up.
+
 ## Checks
 
 All commands below run from the repo root:
@@ -52,32 +56,37 @@ pnpm --filter app test:e2e                   # optional; installs browsers
 
 ## Layout
 
-- `crates/core/` — mv-core library (crypto, CAS, DB, media probe, ingest).
-- `crates/sync/` — mv-sync stub for Phase 3 peer networking.
+- `crates/core/` — core library (crypto, CAS, DB, media probe, ingest, analytics, blind-indexed FTS5).
+- `crates/sync/` — peer networking (iroh endpoint, blobs bridge, docs CRDT, receive loop).
+- `crates/replica/` — headless ciphertext-only replica binary (`mv-replica`).
 - `app/src-tauri/` — Tauri v2 shell + IPC command handlers.
 - `app/src/` — React UI + generated TS bindings under `src/bindings/`.
-- `plans/` — the sacred phase docs; architecture.md is frozen per §2 onward.
+- `plans/` — the phase docs; architecture.md is frozen per §2 onward.
 - `scripts/codegen_ts.sh` — regenerates TS bindings from Rust via ts-rs.
-- `scripts/make_fixtures.py` — dumps the synthetic iPhone fixture tree.
+- `scripts/replica.service` — systemd template for the offsite replica.
 
 ## Status
 
-- **Phase 1 foundation — shipped.** Crypto envelope, CAS, SQLite schema
-  (user_version=1), generic/iPhone/Google-Takeout ingest adapters,
-  Tauri IPC surface, React UI. See
-  [`plans/phase-1-foundation.md`](./plans/phase-1-foundation.md) §9.
-- **Phase 2 browsing — shipped.** Schema upgraded to `user_version=2`
-  (`ml_job`, `nd_cluster`, `asset_vec`, `asset_location.path_hash`);
-  64-bit dhash + near-duplicate clustering + best-shot picker;
-  metadata-filter search (CLIP text rerank gated on `ml-models`);
-  Tauri commands for people/search/map/near-dup/ML status; React
-  surfaces for Timeline zoom (Year/Month/Day) + sticky headers +
-  keyboard nav (j/k, arrows, `/`), Search, Map, People, Duplicates;
-  `ml-models` feature flag scaffolded (default off). See
-  [`plans/phase-2-browsing.md`](./plans/phase-2-browsing.md) for the
-  acceptance matrix and `SECURITY.md` for the updated leakage table.
+- **Phase 1 foundation — shipped.** Crypto envelope, CAS, SQLite schema,
+  generic/iPhone/Google-Takeout ingest adapters, Tauri IPC surface,
+  React UI. See [`plans/phase-1-foundation.md`](./plans/phase-1-foundation.md).
+- **Phase 2 browsing — shipped.** 64-bit dhash + near-duplicate
+  clustering, metadata-filter search (CLIP text rerank gated on
+  `ml-models`), Tauri commands for people/search/map/near-dup/ML status,
+  React surfaces for Timeline zoom (Year/Month/Day), Search, Map,
+  People, Duplicates. See [`plans/phase-2-browsing.md`](./plans/phase-2-browsing.md).
+- **Phase 3 peer + smart library — in progress.**
+  - Pairing + same-device sharing (3.1–3.2) shipped.
+  - Trip detection via DBSCAN on GPS+day clusters (D1).
+  - Offline reverse geocoding for trip names (D2).
+  - On-this-day memory cards (D3).
+  - Smart albums with rule-compiled materialised views (D4, DDL v7).
+  - Blind-indexed FTS5 search on per-asset user-authored text (D5).
+  - Multi-user on one device + same-device peer listing (D6).
+  - Headless offsite replica (`mv-replica`) + systemd template (D8).
+  - Public share-links + viewer SPA (D7) and pets classifier (D9) — pending.
 
-### Enabling ML (Phase 2.1)
+### Enabling ML (Phase 2.1+)
 
 Face detection, face clustering, and CLIP natural-language search run
 **entirely on-device** via ONNX Runtime. Nothing is uploaded. The
@@ -110,14 +119,14 @@ cargo build --features ml-models
 # or, if you're on macOS:     --features ml-coreml
 ```
 
-The SHA-256 pins in `scripts/download_models.sh` and
-`crates/core/src/ml/manifest.rs` are currently placeholder zeroes that
-fail closed. Updating them is a deliberate step — see
-`plans/wise-strolling-otter.md` for the three-way sync procedure.
-
-Without models, Media Vault still runs with everything that doesn't
+Without models, Keepsake still runs with everything that doesn't
 require inference — metadata search, pHash-based near-dup clustering,
-the full Phase-1 pipeline. The People tab will render empty and the
-"text" search field falls back to date-ordered results. The top-nav
-badge shows the current state at a glance ("ML off" / "ML — no
-weights" / "ML Cpu · idle" / "ML Cuda · 12 queued").
+trips, memories, smart albums, blind-FTS text search, peer sharing,
+the full Phase-1 pipeline. The People tab renders empty and the CLIP
+text search falls back to date-ordered results. The top-nav badge
+shows the current state at a glance ("ML off" / "ML — no weights" /
+"ML Cpu · idle" / "ML Cuda · 12 queued").
+
+## License
+
+AGPL-3.0-or-later. See [`LICENSE`](./LICENSE).
