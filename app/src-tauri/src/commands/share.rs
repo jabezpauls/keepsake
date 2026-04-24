@@ -463,3 +463,140 @@ async fn accept_incoming_share_impl(state: &AppState, base32: String) -> AppResu
     ensure_receive_loop(state).await?;
     Ok(cid)
 }
+
+// =========== Public share-links (D7) ==========================================
+
+use mv_core::public_link;
+use rusqlite::OptionalExtension;
+
+#[tauri::command]
+pub async fn create_public_link(
+    state: State<'_, AppState>,
+    collection_id: i64,
+    password: Option<String>,
+    expires_at: Option<i64>,
+) -> Result<crate::dto::PublicLinkView, String> {
+    wire(create_public_link_impl(&state, collection_id, password, expires_at).await)
+}
+
+async fn create_public_link_impl(
+    state: &AppState,
+    collection_id: i64,
+    password: Option<String>,
+    expires_at: Option<i64>,
+) -> AppResult<crate::dto::PublicLinkView> {
+    let (db_handle, user_id) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (s.db.clone(), s.user.user_id)
+    };
+
+    let pw_secret = password.map(secrecy::SecretString::from);
+    let link = tokio::task::spawn_blocking(move || -> AppResult<crate::dto::PublicLinkView> {
+        let new = public_link::generate(pw_secret.as_ref())?;
+        let guard = db_handle.blocking_lock();
+        // Verify collection is owned by the session user. Reject attempts to
+        // publish someone else's collection even if they somehow guess the id.
+        let owner_check: Option<i64> = guard
+            .query_row(
+                "SELECT owner_id FROM collection WHERE id = ?1",
+                rusqlite::params![collection_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match owner_check {
+            Some(owner) if owner == user_id => {}
+            _ => return Err(AppError::NotFound),
+        }
+
+        let now = chrono::Utc::now().timestamp();
+        let id = mv_core::db::queries::insert_public_link(
+            &guard,
+            collection_id,
+            user_id,
+            &new.pub_id,
+            new.has_password,
+            new.password_salt.as_ref(),
+            new.wrapped_key.as_deref(),
+            expires_at,
+            now,
+        )?;
+        let url_fragment = new.url_fragment();
+        Ok(crate::dto::PublicLinkView {
+            id,
+            collection_id,
+            pub_id_b32: new.pub_id_b32,
+            url_fragment,
+            has_password: new.has_password,
+            expires_at,
+            created_at: now,
+        })
+    })
+    .await
+    .map_err(AppError::from)??;
+    Ok(link)
+}
+
+#[tauri::command]
+pub async fn list_public_links(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::dto::PublicLinkView>, String> {
+    wire(list_public_links_impl(&state).await)
+}
+
+async fn list_public_links_impl(state: &AppState) -> AppResult<Vec<crate::dto::PublicLinkView>> {
+    let (db_handle, user_id) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (s.db.clone(), s.user.user_id)
+    };
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<crate::dto::PublicLinkView>> {
+        let guard = db_handle.blocking_lock();
+        let rows = mv_core::db::queries::list_public_links_for_user(&guard, user_id)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let mut pub_bytes = [0u8; 16];
+                if r.pub_id.len() == 16 {
+                    pub_bytes.copy_from_slice(&r.pub_id);
+                }
+                let pub_id_b32 =
+                    base32::encode(base32::Alphabet::Rfc4648 { padding: false }, &pub_bytes)
+                        .to_ascii_lowercase();
+                crate::dto::PublicLinkView {
+                    id: r.id,
+                    collection_id: r.collection_id,
+                    pub_id_b32,
+                    // After a list, we no longer have the viewer key — the
+                    // URL fragment is only surfaced at create time. UIs
+                    // that need to re-share must create a new link.
+                    url_fragment: String::new(),
+                    has_password: r.has_password,
+                    expires_at: r.expires_at,
+                    created_at: r.created_at,
+                }
+            })
+            .collect())
+    })
+    .await
+    .map_err(AppError::from)?
+}
+
+#[tauri::command]
+pub async fn revoke_public_link(state: State<'_, AppState>, id: i64) -> Result<bool, String> {
+    wire(revoke_public_link_impl(&state, id).await)
+}
+
+async fn revoke_public_link_impl(state: &AppState, id: i64) -> AppResult<bool> {
+    let (db_handle, user_id) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (s.db.clone(), s.user.user_id)
+    };
+    tokio::task::spawn_blocking(move || -> AppResult<bool> {
+        let guard = db_handle.blocking_lock();
+        mv_core::db::queries::delete_public_link(&guard, id, user_id).map_err(AppError::from)
+    })
+    .await
+    .map_err(AppError::from)?
+}

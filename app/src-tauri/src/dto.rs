@@ -390,6 +390,31 @@ pub struct IncomingShareView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+/// D7 public share-link, as returned to the UI. `url_fragment` is only
+/// populated on create — a subsequent `list_public_links` call can't
+/// recover the viewer key, so re-sharing a lost link requires creating
+/// a new one (and revoking the old).
+pub struct PublicLinkView {
+    #[ts(type = "number")]
+    pub id: i64,
+    #[ts(type = "number")]
+    pub collection_id: i64,
+    /// Lowercase base32 of the 16-byte `pub_id`. Compose the URL as
+    /// `https://<host>/s/<pub_id_b32>[#<url_fragment>]`.
+    pub pub_id_b32: String,
+    /// Hex-free base32 fragment. Present on create for no-password
+    /// links; empty string when password-gated or when the link was
+    /// returned by a list command (the key isn't recoverable then).
+    pub url_fragment: String,
+    pub has_password: bool,
+    #[ts(type = "number | null")]
+    pub expires_at: Option<i64>,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 pub struct ShareInviteView {
     /// Base32-encoded iroh-docs `DocTicket`. Paste into the recipient's
     /// "Accept invite" textarea to subscribe to the namespace.

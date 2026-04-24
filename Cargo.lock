@@ -3981,6 +3981,7 @@ name = "mv-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base32",
  "chrono",
  "hex",
  "iroh-blobs",

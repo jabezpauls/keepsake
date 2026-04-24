@@ -594,6 +594,123 @@ pub fn count_smart_album_members(conn: &Connection, collection_id: i64) -> Resul
     Ok(n)
 }
 
+// --------- Public share links (D7) --------------------------------------------
+
+/// Persisted form of one public_link row.
+#[derive(Debug, Clone)]
+pub struct PublicLinkRow {
+    pub id: i64,
+    pub collection_id: i64,
+    pub owner_id: i64,
+    pub pub_id: Vec<u8>,
+    pub has_password: bool,
+    pub password_salt: Option<Vec<u8>>,
+    pub wrapped_key: Option<Vec<u8>>,
+    pub expires_at: Option<i64>,
+    pub created_at: i64,
+}
+
+/// Insert a freshly generated link authorisation. `wrapped_key` +
+/// `password_salt` must either both be `Some` (password mode) or both
+/// be `None` (fragment mode).
+#[allow(clippy::too_many_arguments)]
+pub fn insert_public_link(
+    conn: &Connection,
+    collection_id: i64,
+    owner_id: i64,
+    pub_id: &[u8; 16],
+    has_password: bool,
+    password_salt: Option<&[u8; 16]>,
+    wrapped_key: Option<&[u8]>,
+    expires_at: Option<i64>,
+    now: i64,
+) -> Result<i64> {
+    conn.execute(
+        r"INSERT INTO public_link
+          (collection_id, owner_id, pub_id, has_password, password_salt,
+           wrapped_key, expires_at, created_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            collection_id,
+            owner_id,
+            &pub_id[..],
+            has_password as i64,
+            password_salt.map(|s| s.as_slice()),
+            wrapped_key,
+            expires_at,
+            now,
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// List every public link owned by `user_id`, most-recent first.
+pub fn list_public_links_for_user(conn: &Connection, user_id: i64) -> Result<Vec<PublicLinkRow>> {
+    let mut stmt = conn.prepare(
+        r"SELECT id, collection_id, owner_id, pub_id, has_password,
+                 password_salt, wrapped_key, expires_at, created_at
+          FROM public_link
+          WHERE owner_id = ?1
+          ORDER BY created_at DESC, id DESC",
+    )?;
+    let rows = stmt
+        .query_map(params![user_id], |r| {
+            Ok(PublicLinkRow {
+                id: r.get(0)?,
+                collection_id: r.get(1)?,
+                owner_id: r.get(2)?,
+                pub_id: r.get(3)?,
+                has_password: r.get::<_, i64>(4)? != 0,
+                password_salt: r.get(5)?,
+                wrapped_key: r.get(6)?,
+                expires_at: r.get(7)?,
+                created_at: r.get(8)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Look up a link by its 16-byte `pub_id`. Used by the hosting peer's
+/// HTTP gateway to answer `GET /s/<pub_id>`.
+pub fn get_public_link_by_pub_id(
+    conn: &Connection,
+    pub_id: &[u8; 16],
+) -> Result<Option<PublicLinkRow>> {
+    let row = conn
+        .query_row(
+            r"SELECT id, collection_id, owner_id, pub_id, has_password,
+                     password_salt, wrapped_key, expires_at, created_at
+              FROM public_link WHERE pub_id = ?1",
+            params![&pub_id[..]],
+            |r| {
+                Ok(PublicLinkRow {
+                    id: r.get(0)?,
+                    collection_id: r.get(1)?,
+                    owner_id: r.get(2)?,
+                    pub_id: r.get(3)?,
+                    has_password: r.get::<_, i64>(4)? != 0,
+                    password_salt: r.get(5)?,
+                    wrapped_key: r.get(6)?,
+                    expires_at: r.get(7)?,
+                    created_at: r.get(8)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(row)
+}
+
+/// Revoke = drop the row. The hosting peer stops resolving the
+/// `pub_id` at the next request. Returns `true` if a row was removed.
+pub fn delete_public_link(conn: &Connection, id: i64, owner_id: i64) -> Result<bool> {
+    let n = conn.execute(
+        "DELETE FROM public_link WHERE id = ?1 AND owner_id = ?2",
+        params![id, owner_id],
+    )?;
+    Ok(n > 0)
+}
+
 pub fn insert_collection(
     conn: &Connection,
     owner_id: i64,

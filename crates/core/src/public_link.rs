@@ -176,9 +176,11 @@ mod tests {
         let frag = link.url_fragment();
         assert!(!frag.is_empty());
         // Fragment is the viewer key in base32.
-        let decoded =
-            base32::decode(base32::Alphabet::Rfc4648 { padding: false }, &frag.to_uppercase())
-                .unwrap();
+        let decoded = base32::decode(
+            base32::Alphabet::Rfc4648 { padding: false },
+            &frag.to_uppercase(),
+        )
+        .unwrap();
         assert_eq!(decoded, link.viewer_key);
     }
 

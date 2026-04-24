@@ -38,6 +38,7 @@ secrecy.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
 hex.workspace = true
+base32.workspace = true
 rusqlite.workspace = true
 
 [features]
