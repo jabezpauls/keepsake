@@ -140,6 +140,11 @@ sha2 = "0.10"
 # of the one that was built in. Already a transitive dep via `ort`'s
 # `load-dynamic` feature; bringing it up to a direct dep keeps ownership clear.
 libloading = "0.8"
+# HTTP client for the model downloader (Layer 4 — first-run wizard). Pinned
+# to the transitive version already in the tree (pulled by `iroh` for relay
+# traffic) so we don't rebuild its dep fan. `rustls` over native-tls for
+# portability: no system cert-store dance on Linux/Windows cross-builds.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Phase 3.1 — peer networking. Pinned to the current stable iroh line; version
 # moves fast, so any bump comes with a 3.1.x follow-up. `iroh-base` is the

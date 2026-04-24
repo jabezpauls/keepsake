@@ -24,6 +24,9 @@ pub mod manifest;
 pub mod deps_probe;
 
 #[cfg(feature = "ml-models")]
+pub mod downloader;
+
+#[cfg(feature = "ml-models")]
 pub mod loader;
 
 #[cfg(feature = "ml-models")]
