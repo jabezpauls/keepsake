@@ -168,7 +168,11 @@ pub fn embed_text(
 ) -> Result<Vec<f32>> {
     let ids = tokenizer.encode(text)?;
     debug_assert_eq!(ids.len(), CLIP_CTX);
-    let tokens = Array2::<i64>::from_shape_vec((1, CLIP_CTX), ids)
+    // OpenCLIP / HF CLIP ONNX exports typically declare `input_ids` as int32.
+    // The tokenizer API returns i64 (the HF-tokenizers convention) so cast
+    // down — CLIP vocab fits easily in 32 bits (max id = 49408).
+    let ids32: Vec<i32> = ids.into_iter().map(|x| x as i32).collect();
+    let tokens = Array2::<i32>::from_shape_vec((1, CLIP_CTX), ids32)
         .map_err(|e| Error::Ingest(format!("clip text tensor: {e}")))?;
 
     let view = tokens.view();

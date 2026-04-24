@@ -36,25 +36,28 @@ pub struct ModelEntry {
 /// trips `MlModelChecksum` on load until they are updated — this is intended:
 /// we fail closed rather than accept an unknown weight blob.
 pub const MODELS: &[ModelEntry] = &[
+    // Pinned to immich-app's ViT-L-14__openai ONNX exports (HuggingFace) —
+    // OpenCLIP ViT-L/14 trained on OpenAI data, visual + textual + tokenizer.
     ModelEntry {
         name: "clip_visual.onnx",
-        sha256_hex: "0000000000000000000000000000000000000000000000000000000000000000",
+        sha256_hex: "2b02d572f59c509f4b97b9c54a868453cca1a652cd5d60e1d51d0052f055cb8c",
     },
     ModelEntry {
         name: "clip_textual.onnx",
-        sha256_hex: "0000000000000000000000000000000000000000000000000000000000000000",
+        sha256_hex: "9fbe72ea8d36c2effaccedcf7249e3729ad0d9b4af6604b433ecdd0105663c9c",
     },
     ModelEntry {
         name: "clip_tokenizer.json",
-        sha256_hex: "0000000000000000000000000000000000000000000000000000000000000000",
+        sha256_hex: "6d9109cc838977f3ca94a379eec36aecc7c807e1785cd729660ca2fc0171fb35",
     },
+    // Pinned to immich-app/buffalo_l — InsightFace SCRFD 10g + ArcFace R100.
     ModelEntry {
         name: "scrfd.onnx",
-        sha256_hex: "0000000000000000000000000000000000000000000000000000000000000000",
+        sha256_hex: "5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91",
     },
     ModelEntry {
         name: "arcface.onnx",
-        sha256_hex: "0000000000000000000000000000000000000000000000000000000000000000",
+        sha256_hex: "4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43",
     },
 ];
 

@@ -100,14 +100,27 @@ pub fn try_bootstrap_runtime(session: &Session, vault_root: &Path) {
         let model_dir = std::env::var_os("MV_MODELS")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| vault_root.join("models"));
+        // Prefer CUDA when ml-cuda is compiled in; fall back to Auto otherwise.
+        // Auto's provider list includes CoreML which can poison registration
+        // on Linux and silently drop back to CPU — forcing CUDA when built
+        // against it keeps nvidia-smi honest.
+        let execution_provider = if cfg!(feature = "ml-cuda") {
+            mv_core::ml::ExecutionProvider::Cuda
+        } else {
+            mv_core::ml::ExecutionProvider::Auto
+        };
         let cfg = mv_core::ml::MlConfig {
             model_dir,
-            execution_provider: mv_core::ml::ExecutionProvider::Auto,
+            execution_provider,
         };
         match mv_core::ml::MlRuntime::load(cfg) {
             Ok(rt) => {
                 let arc = Arc::new(rt);
                 *session.ml_runtime.lock().unwrap() = Some(arc.clone());
+                // Share the same runtime with the drain worker so it can run
+                // model-backed jobs instead of failing every one with
+                // `ModelsUnavailable`.
+                session.ml_worker.set_runtime(arc.clone());
                 // Give the worker a resolver that hands back the default
                 // collection key for every asset. Phase 3 extends this for
                 // password-album assets — for now, non-default-album assets
