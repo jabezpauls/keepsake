@@ -9,7 +9,7 @@ use rusqlite::Connection;
 use crate::Result;
 
 /// Target schema version shipped by this build.
-pub const CURRENT_VERSION: i32 = 7;
+pub const CURRENT_VERSION: i32 = 8;
 
 /// Apply any migrations needed to bring `conn` up to [`CURRENT_VERSION`].
 pub fn apply(conn: &Connection) -> Result<()> {
@@ -50,6 +50,10 @@ pub fn apply(conn: &Connection) -> Result<()> {
     if version < 7 {
         conn.execute_batch(super::schema::DDL_V7)?;
         conn.pragma_update(None, "user_version", 7)?;
+    }
+    if version < 8 {
+        conn.execute_batch(super::schema::DDL_V8)?;
+        conn.pragma_update(None, "user_version", 8)?;
     }
     Ok(())
 }
@@ -224,6 +228,29 @@ mod tests {
         let n: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='share_status'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn v7_to_v8_creates_public_link() {
+        let conn = Connection::open_in_memory().unwrap();
+        super::super::schema::init(&conn).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V2).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V3).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V4).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V5).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V6).unwrap();
+        conn.execute_batch(super::super::schema::DDL_V7).unwrap();
+        conn.pragma_update(None, "user_version", 7_i32).unwrap();
+
+        apply(&conn).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='public_link'",
                 [],
                 |r| r.get(0),
             )
