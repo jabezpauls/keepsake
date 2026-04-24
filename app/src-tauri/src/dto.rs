@@ -399,6 +399,23 @@ pub struct ShareInviteView {
     pub asset_count: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+/// D6 multi-user summary. Surfaced pre-unlock on the login screen and
+/// post-unlock in the same-device share picker. Username stays sealed
+/// — callers can render "User #{user_id}" until the typed-in username
+/// unlocks the row.
+pub struct UserSummaryView {
+    #[ts(type = "number")]
+    pub user_id: i64,
+    /// X25519 public key in hex. Matches the bytes we hand remote peers
+    /// when sealing a collection key — the same ID space is reused for
+    /// same-device sharing.
+    pub identity_pub_hex: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
 /// D4 rule spec. Mirrors `mv_core::analytics::smart_albums::SmartRule`

@@ -35,6 +35,8 @@ pub fn run() {
             commands::auth::unlock,
             commands::auth::lock,
             commands::auth::unlock_hidden,
+            commands::auth::list_users,
+            commands::auth::list_local_peers,
             commands::sources::add_source,
             commands::sources::list_sources,
             commands::sources::ingest_status,

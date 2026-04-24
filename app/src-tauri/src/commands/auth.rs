@@ -60,12 +60,11 @@ async fn create_user_impl(
     let uname = username.clone();
 
     let session = tokio::task::spawn_blocking(move || -> AppResult<Session> {
-        if index_path.exists() {
-            let conn = db::schema::open(&index_path).map_err(AppError::from)?;
-            if db::user_exists(&conn)? {
-                return Err(AppError::AlreadyExists);
-            }
-        }
+        // D6: multi-user on same device is allowed. No longer bail when
+        // `user_exists` — the vault is a container for many independent
+        // keystores. The caller typing a duplicate username will simply
+        // create a second row; unlock picks whichever one the password
+        // opens.
 
         let (record, mut unlocked) = keystore::create_user(&uname, &pw)?;
         let conn = db::schema::open(&index_path)?;
@@ -146,19 +145,39 @@ async fn unlock_impl(
 
     let session = tokio::task::spawn_blocking(move || -> AppResult<Session> {
         let conn = db::schema::open(&index_path)?;
-        // Phase 1: single user → id = lowest id.
-        let user_id: i64 = conn
-            .query_row("SELECT id FROM user ORDER BY id LIMIT 1", [], |r| r.get(0))
-            .map_err(|e| AppError::from(mv_core::Error::from(e)))?;
-        let record: UserRecord = db::get_user_record(&conn, user_id)?;
-        let unlocked = keystore::unlock(&record, &pw, user_id)?;
-        // Verify username matches what was saved (also validates key).
-        let uname_bytes =
-            mv_core::crypto::open_row(&record.username_ct, 0, unlocked.master_key.as_bytes())?;
-        let actual = String::from_utf8(uname_bytes).map_err(|_| AppError::Crypto)?;
-        if actual != expected {
-            return Err(AppError::Crypto);
+        // D6: multi-user on same device. Iterate every user row, trying
+        // the supplied password against each. Accept the first whose
+        // decrypted `username_ct` matches the typed username. Each
+        // Argon2id takes ~200ms, so this is bounded even for 5+ users.
+        let ids = db::list_user_ids(&conn)?;
+        if ids.is_empty() {
+            return Err(AppError::NotFound);
         }
+        let mut matched: Option<(
+            i64,
+            UserRecord,
+            mv_core::crypto::keystore::UnlockedUser,
+            String,
+        )> = None;
+        for (user_id, _identity_pub, _created) in &ids {
+            let record: UserRecord = db::get_user_record(&conn, *user_id)?;
+            let Ok(unlocked) = keystore::unlock(&record, &pw, *user_id) else {
+                continue;
+            };
+            let Ok(uname_bytes) =
+                mv_core::crypto::open_row(&record.username_ct, 0, unlocked.master_key.as_bytes())
+            else {
+                continue;
+            };
+            let Ok(actual) = String::from_utf8(uname_bytes) else {
+                continue;
+            };
+            if actual == expected {
+                matched = Some((*user_id, record, unlocked, actual));
+                break;
+            }
+        }
+        let (user_id, record, unlocked, actual) = matched.ok_or(AppError::Crypto)?;
 
         // Find the default "Unsorted" album (lowest-id album owned by this user).
         let default_id: i64 = conn
@@ -222,6 +241,70 @@ pub async fn lock(state: State<'_, AppState>) -> Result<(), String> {
         }
         .await,
     )
+}
+
+#[tauri::command]
+pub async fn list_users(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::dto::UserSummaryView>, String> {
+    wire(list_users_impl(&state).await)
+}
+
+async fn list_users_impl(state: &AppState) -> AppResult<Vec<crate::dto::UserSummaryView>> {
+    let path = state.index_db_path();
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let path_owned = path.clone();
+    let rows = tokio::task::spawn_blocking(move || -> AppResult<Vec<(i64, Vec<u8>, i64)>> {
+        let conn = db::schema::open(&path_owned)?;
+        Ok(db::list_user_ids(&conn)?)
+    })
+    .await
+    .map_err(AppError::from)??;
+    Ok(rows
+        .into_iter()
+        .map(|(id, ipk, created_at)| crate::dto::UserSummaryView {
+            user_id: id,
+            identity_pub_hex: hex::encode(ipk),
+            created_at,
+        })
+        .collect())
+}
+
+/// List every OTHER local user on this vault — everyone except the
+/// currently-logged-in session owner. Phase-3 §4.4 same-device share
+/// picker uses this: sharing to a local user reuses the peer sealing
+/// path (X25519 seal under their `identity_pub`) so the on-wire format
+/// is identical to remote sharing.
+#[tauri::command]
+pub async fn list_local_peers(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::dto::UserSummaryView>, String> {
+    wire(list_local_peers_impl(&state).await)
+}
+
+async fn list_local_peers_impl(state: &AppState) -> AppResult<Vec<crate::dto::UserSummaryView>> {
+    let (db_handle, me) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (s.db.clone(), s.user.user_id)
+    };
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<crate::dto::UserSummaryView>> {
+        let guard = db_handle.blocking_lock();
+        let rows = db::list_user_ids(&guard)?;
+        Ok(rows
+            .into_iter()
+            .filter(|(id, _, _)| *id != me)
+            .map(|(id, ipk, created_at)| crate::dto::UserSummaryView {
+                user_id: id,
+                identity_pub_hex: hex::encode(ipk),
+                created_at,
+            })
+            .collect())
+    })
+    .await
+    .map_err(AppError::from)?
 }
 
 #[tauri::command]

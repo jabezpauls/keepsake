@@ -22,6 +22,7 @@ export type { TripView } from "./bindings/TripView";
 export type { MemoryGroupView } from "./bindings/MemoryGroupView";
 export type { SmartAlbumView } from "./bindings/SmartAlbumView";
 export type { SmartRuleView } from "./bindings/SmartRuleView";
+export type { UserSummaryView } from "./bindings/UserSummaryView";
 export type { NearDupCluster } from "./bindings/NearDupCluster";
 export type { NearDupMember } from "./bindings/NearDupMember";
 export type { PersonView } from "./bindings/PersonView";
@@ -51,6 +52,7 @@ import type { TripView } from "./bindings/TripView";
 import type { MemoryGroupView } from "./bindings/MemoryGroupView";
 import type { SmartAlbumView } from "./bindings/SmartAlbumView";
 import type { SmartRuleView } from "./bindings/SmartRuleView";
+import type { UserSummaryView } from "./bindings/UserSummaryView";
 import type { NearDupCluster } from "./bindings/NearDupCluster";
 import type { PersonView } from "./bindings/PersonView";
 import type { SearchHitView } from "./bindings/SearchHitView";
@@ -70,6 +72,8 @@ export const api = {
     lock: () => invoke<null>("lock"),
     unlockHidden: (password: string) =>
         invoke<boolean>("unlock_hidden", { password }),
+    listUsers: () => invoke<UserSummaryView[]>("list_users"),
+    listLocalPeers: () => invoke<UserSummaryView[]>("list_local_peers"),
 
     // --- sources --------------------------------------------------------
     addSource: (args: {

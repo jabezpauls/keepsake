@@ -37,6 +37,23 @@ pub fn user_exists(conn: &Connection) -> Result<bool> {
     Ok(n > 0)
 }
 
+/// Plaintext `(user_id, identity_pub, created_at)` triples for every
+/// row in `user`, in creation order. Identity pubs leak no subject
+/// matter — they're the same bytes we'd hand a remote peer.
+pub fn list_user_ids(conn: &Connection) -> Result<Vec<(i64, Vec<u8>, i64)>> {
+    let mut stmt = conn.prepare(r"SELECT id, identity_pub, created_at FROM user ORDER BY id")?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Vec<u8>>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 pub fn get_user_record(conn: &Connection, user_id: i64) -> Result<UserRecord> {
     conn.query_row(
         r"SELECT username_ct, main_salt, wrapped_master_key,
@@ -1849,6 +1866,26 @@ mod tests {
         assert_eq!(got.identity_pub, record.identity_pub);
         assert_eq!(got.iroh_node_pub, record.iroh_node_pub);
         assert!(user_exists(&conn).unwrap());
+    }
+
+    #[test]
+    fn list_user_ids_returns_every_row() {
+        let conn = open_mem();
+        let (r1, _) =
+            keystore::create_user("alice", &SecretString::from("alice-pass-xxxxxxxx")).unwrap();
+        let (r2, _) =
+            keystore::create_user("bob", &SecretString::from("bob-pass-xxxxxxxxxx")).unwrap();
+        let a = insert_user(&conn, &r1, 10).unwrap();
+        let b = insert_user(&conn, &r2, 20).unwrap();
+        let rows = list_user_ids(&conn).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, a);
+        assert_eq!(rows[1].0, b);
+        // Identity pubs round-trip as the stored bytes.
+        assert_eq!(rows[0].1, r1.identity_pub);
+        assert_eq!(rows[1].1, r2.identity_pub);
+        assert_eq!(rows[0].2, 10);
+        assert_eq!(rows[1].2, 20);
     }
 
     fn seed_user_and_source(conn: &Connection) -> (i64, i64) {

@@ -3,7 +3,8 @@ import { api } from "../../ipc";
 import { useSession } from "../../state/session";
 
 // The unlock screen serves three modes:
-//   1. create-user (first run — no vault exists yet)
+//   1. create-user (first run — no vault exists yet, OR returning user
+//                   explicitly chose "Add another user" post-D6)
 //   2. unlock       (returning user — vault exists)
 //   3. hidden       (long-press on the logo while at the unlock screen)
 //
@@ -14,6 +15,7 @@ type Mode = "create" | "unlock" | "hidden";
 
 export default function Unlock() {
     const [mode, setMode] = useState<Mode>("unlock");
+    const [userCount, setUserCount] = useState<number | null>(null);
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [password2, setPassword2] = useState("");
@@ -23,14 +25,16 @@ export default function Unlock() {
     const setSession = useSession((s) => s.setSession);
     const setHiddenUnlocked = useSession((s) => s.setHiddenUnlocked);
 
-    // Determine create vs. unlock on mount.
+    // Determine create vs. unlock on mount — use list_users since it
+    // returns per-user rows we can surface, unlike user_exists (bool).
     useEffect(() => {
         void (async () => {
             try {
-                const exists = await api.userExists();
-                setMode(exists ? "unlock" : "create");
+                const users = await api.listUsers();
+                setUserCount(users.length);
+                setMode(users.length === 0 ? "create" : "unlock");
             } catch {
-                // On any error, default to unlock and let user retry.
+                setUserCount(null);
                 setMode("unlock");
             }
         })();
@@ -58,9 +62,6 @@ export default function Unlock() {
                 const session = await api.unlock(username, password);
                 setSession(session);
             } else if (mode === "hidden") {
-                // Hidden vault unlock is attempted against a main-unlocked
-                // session. For plausible-deniability the UI returns to the
-                // unlock screen with the same shake regardless of outcome.
                 const session = await api.unlock(username, password);
                 setSession(session);
                 const ok = await api.unlockHidden(password2);
@@ -76,7 +77,6 @@ export default function Unlock() {
         }
     };
 
-    // Long-press gesture on the logo enters hidden mode.
     const pressTimer = useRef<number | null>(null);
     const onLogoPressStart = () => {
         pressTimer.current = window.setTimeout(() => {
@@ -106,6 +106,13 @@ export default function Unlock() {
                 Media Vault
             </h1>
 
+            {userCount !== null && userCount > 1 && mode === "unlock" && (
+                <p className="hint">
+                    {userCount} users on this vault — type your username to pick
+                    which one to unlock.
+                </p>
+            )}
+
             <form onSubmit={onSubmit} className="unlock-form">
                 <label>
                     <span>Username</span>
@@ -131,7 +138,9 @@ export default function Unlock() {
                 </label>
                 {(mode === "create" || mode === "hidden") && (
                     <label>
-                        <span>{mode === "hidden" ? "Hidden-vault password" : "Confirm password"}</span>
+                        <span>
+                            {mode === "hidden" ? "Hidden-vault password" : "Confirm password"}
+                        </span>
                         <input
                             type="password"
                             value={password2}
@@ -147,6 +156,43 @@ export default function Unlock() {
                 </button>
                 {error && <p className="error">{error}</p>}
             </form>
+
+            {mode === "unlock" && userCount !== null && userCount > 0 && (
+                <p className="hint subtle">
+                    <button
+                        type="button"
+                        className="link"
+                        disabled={busy}
+                        onClick={() => {
+                            setMode("create");
+                            setError(null);
+                            setUsername("");
+                            setPassword("");
+                            setPassword2("");
+                        }}
+                    >
+                        + Add another user to this vault
+                    </button>
+                </p>
+            )}
+            {mode === "create" && userCount !== null && userCount > 0 && (
+                <p className="hint subtle">
+                    <button
+                        type="button"
+                        className="link"
+                        disabled={busy}
+                        onClick={() => {
+                            setMode("unlock");
+                            setError(null);
+                            setUsername("");
+                            setPassword("");
+                            setPassword2("");
+                        }}
+                    >
+                        ← Back to unlock
+                    </button>
+                </p>
+            )}
 
             {mode === "hidden" && (
                 <p className="hint">Returning to main unlock cancels hidden mode.</p>
