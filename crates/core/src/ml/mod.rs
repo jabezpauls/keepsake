@@ -35,6 +35,12 @@ pub mod faces;
 #[cfg(feature = "ml-models")]
 pub mod worker_exec;
 
+// D5/D9 follow-ups: the Rust-side shape of OCR + pet-classifier
+// outputs. Both are always compiled — they don't touch ort directly
+// and have unit tests that run without `ml-models`.
+pub mod ocr;
+pub mod pets;
+
 pub use runtime::{ExecutionProvider, MlConfig, MlJobKind, MlRuntime, MlWorker};
 
 /// Compile-time flag: true when the `ml-models` feature is enabled. Callers
