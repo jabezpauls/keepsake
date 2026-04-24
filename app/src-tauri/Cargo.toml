@@ -43,7 +43,13 @@ base64.workspace = true
 rusqlite.workspace = true
 
 [features]
-default = ["custom-protocol"]
+# `ml-models` is on by default so plain `cargo tauri build` /
+# `cargo tauri dev` / `pnpm tauri build` produces a binary with the
+# on-device AI pipeline compiled in. Skipping it produced "ML off" on
+# the top-nav badge and confused everyone who didn't know to pass
+# `--features ml-models`. Disable explicitly for a slim build:
+#   cargo tauri build --no-default-features --features custom-protocol
+default = ["custom-protocol", "ml-models"]
 custom-protocol = ["tauri/custom-protocol"]
 # Phase 2.1 — forward on-device ML feature flags down to mv-core. The app
 # shell never talks to ort directly; all wiring lives in mv-core behind

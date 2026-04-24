@@ -27,6 +27,21 @@ test("create user → add source → timeline → album export", async ({ page }
             switch (cmd) {
                 case "user_exists":
                     return state.userExists;
+                case "list_users":
+                    // D6 multi-user — Unlock prefers list_users over
+                    // user_exists so it can pre-populate the username
+                    // dropdown. Return shape: UserSummaryView[].
+                    return state.userExists
+                        ? [
+                              {
+                                  user_id: 1,
+                                  username: state.session?.username ?? "alice",
+                                  created_at: 0,
+                              },
+                          ]
+                        : [];
+                case "list_local_peers":
+                    return [];
                 case "create_user":
                     state.userExists = true;
                     state.session = {
