@@ -343,6 +343,31 @@ pub struct MemoryGroupView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+/// D3-follow-up §8b "year in photos" card.
+pub struct YearInPhotosView {
+    #[ts(type = "number")]
+    pub year: i32,
+    #[ts(type = "number")]
+    pub asset_count: u32,
+    /// Up to 6 representative asset ids drawn across the year.
+    #[ts(type = "Array<number>")]
+    pub highlights: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+/// D3-follow-up §8b "Person X in Year Y" card.
+pub struct PersonYearMemoryView {
+    #[ts(type = "number")]
+    pub person_id: i64,
+    #[ts(type = "number")]
+    pub year: i32,
+    #[ts(type = "Array<number>")]
+    pub asset_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 pub struct TripView {
     #[ts(type = "number")]
     pub id: i64,
@@ -398,6 +423,23 @@ pub struct PetAssetView {
     #[ts(type = "number | null")]
     pub taken_at_utc_day: Option<i64>,
     pub species: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+/// D7a bundle-export result. `file_path` is an absolute filesystem
+/// path to the HTML written on disk. `url_fragment` is populated for
+/// no-password links so the sender can append `#<fragment>` when
+/// hosting the HTML over HTTP; password-gated bundles leave it empty.
+pub struct PublicLinkBundleReport {
+    pub pub_id_b32: String,
+    pub url_fragment: String,
+    pub has_password: bool,
+    #[ts(type = "number")]
+    pub asset_count: u32,
+    pub file_path: String,
+    #[ts(type = "number | null")]
+    pub expires_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

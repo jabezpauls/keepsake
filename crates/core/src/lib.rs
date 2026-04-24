@@ -14,6 +14,7 @@ pub mod ingest;
 pub mod media;
 pub mod ml;
 pub mod public_link;
+pub mod public_link_bundle;
 pub mod search;
 pub mod share;
 

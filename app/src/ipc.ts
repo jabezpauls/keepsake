@@ -207,6 +207,17 @@ export const api = {
         ),
     revokePublicLink: (id: number) =>
         invoke<boolean>("revoke_public_link", { id }),
+    exportPublicLinkBundle: (
+        collectionId: number,
+        albumName: string,
+        password: string | null,
+        expiresAt: number | null,
+        destPath: string,
+    ) =>
+        invoke<import("./bindings/PublicLinkBundleReport").PublicLinkBundleReport>(
+            "export_public_link_bundle",
+            { collectionId, albumName, password, expiresAt, destPath },
+        ),
 
     // --- pets (D9) ------------------------------------------------------
     setAssetPet: (assetId: number, isPet: boolean, species: string | null) =>
@@ -219,6 +230,15 @@ export const api = {
     listTrips: () => invoke<TripView[]>("list_trips"),
     memoriesOnThisDay: () =>
         invoke<MemoryGroupView[]>("memories_on_this_day"),
+    memoriesYearInPhotos: () =>
+        invoke<import("./bindings/YearInPhotosView").YearInPhotosView[]>(
+            "memories_year_in_photos",
+        ),
+    memoriesPersonYear: (minAssets?: number) =>
+        invoke<import("./bindings/PersonYearMemoryView").PersonYearMemoryView[]>(
+            "memories_person_year",
+            { minAssets: minAssets ?? null },
+        ),
 
     // --- smart albums (D4) ---------------------------------------------
     createSmartAlbum: (name: string, rule: SmartRuleView) =>

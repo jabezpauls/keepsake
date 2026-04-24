@@ -4,7 +4,9 @@
 
 use std::sync::Arc;
 
-use mv_core::analytics::memories::{on_this_day, MemoryGroup};
+use mv_core::analytics::memories::{
+    on_this_day, person_year_memories, year_in_photos, MemoryGroup, PersonYearMemory, YearInPhotos,
+};
 use mv_core::analytics::smart_albums::{materialize as materialize_smart, SmartRule};
 use mv_core::analytics::trips::{detect_trips, GeoPoint, TripParams};
 use mv_core::crypto::envelope::{open_row, seal_row};
@@ -14,8 +16,8 @@ use mv_core::geocode::Geocoder;
 use tauri::State;
 
 use crate::dto::{
-    MemoryGroupView, SmartAlbumView, SmartRuleView, TimelineCursor, TimelineEntryView,
-    TimelinePage, TripView,
+    MemoryGroupView, PersonYearMemoryView, SmartAlbumView, SmartRuleView, TimelineCursor,
+    TimelineEntryView, TimelinePage, TripView, YearInPhotosView,
 };
 use crate::errors::{wire, AppError, AppResult};
 use crate::state::AppState;
@@ -166,6 +168,73 @@ async fn memories_on_this_day_impl(state: &AppState) -> AppResult<Vec<MemoryGrou
                 year: g.year,
                 years_ago: g.years_ago,
                 asset_ids: g.asset_ids,
+            })
+            .collect())
+    })
+    .await
+    .map_err(AppError::from)?
+}
+
+#[tauri::command]
+pub async fn memories_year_in_photos(
+    state: State<'_, AppState>,
+) -> Result<Vec<YearInPhotosView>, String> {
+    wire(memories_year_in_photos_impl(&state).await)
+}
+
+async fn memories_year_in_photos_impl(state: &AppState) -> AppResult<Vec<YearInPhotosView>> {
+    let (db_handle, user_id) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (s.db.clone(), s.user.user_id)
+    };
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<YearInPhotosView>> {
+        let guard = db_handle.blocking_lock();
+        let assets = q::list_dated_assets_for_user(&guard, user_id)?;
+        let today = chrono::Utc::now().date_naive();
+        let cards: Vec<YearInPhotos> = year_in_photos(today, &assets);
+        Ok(cards
+            .into_iter()
+            .map(|c| YearInPhotosView {
+                year: c.year,
+                asset_count: c.asset_count as u32,
+                highlights: c.highlights,
+            })
+            .collect())
+    })
+    .await
+    .map_err(AppError::from)?
+}
+
+#[tauri::command]
+pub async fn memories_person_year(
+    state: State<'_, AppState>,
+    min_assets: Option<u32>,
+) -> Result<Vec<PersonYearMemoryView>, String> {
+    wire(memories_person_year_impl(&state, min_assets).await)
+}
+
+async fn memories_person_year_impl(
+    state: &AppState,
+    min_assets: Option<u32>,
+) -> AppResult<Vec<PersonYearMemoryView>> {
+    let (db_handle, user_id) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (s.db.clone(), s.user.user_id)
+    };
+    let floor = min_assets.unwrap_or(3).max(1) as usize;
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<PersonYearMemoryView>> {
+        let guard = db_handle.blocking_lock();
+        let rows = q::list_person_asset_days_for_user(&guard, user_id)?;
+        let today = chrono::Utc::now().date_naive();
+        let cards: Vec<PersonYearMemory> = person_year_memories(today, &rows, floor);
+        Ok(cards
+            .into_iter()
+            .map(|c| PersonYearMemoryView {
+                person_id: c.person_id,
+                year: c.year,
+                asset_ids: c.asset_ids,
             })
             .collect())
     })

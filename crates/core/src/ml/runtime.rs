@@ -121,6 +121,12 @@ pub enum MlJobKind {
     RebuildPersonClusters,
     /// Near-dup cluster rebuild (runs without ml-models flag).
     RebuildNearDup,
+    /// Run PaddleOCR (det → cls → rec) and index tokens into
+    /// `asset_text` under the owner's blind search key.
+    Ocr,
+    /// Run the pets classifier (binary dog/cat/bird/none) and
+    /// upsert `asset.is_pet` + `pet_species_ct`.
+    ClassifyPet,
 }
 
 impl MlJobKind {
@@ -131,6 +137,8 @@ impl MlJobKind {
             Self::Phash => "phash",
             Self::RebuildPersonClusters => "rebuild_person_clusters",
             Self::RebuildNearDup => "rebuild_near_dup",
+            Self::Ocr => "ocr",
+            Self::ClassifyPet => "classify_pet",
         }
     }
 
@@ -141,6 +149,8 @@ impl MlJobKind {
             "phash" => Self::Phash,
             "rebuild_person_clusters" => Self::RebuildPersonClusters,
             "rebuild_near_dup" => Self::RebuildNearDup,
+            "ocr" => Self::Ocr,
+            "classify_pet" => Self::ClassifyPet,
             _ => return None,
         })
     }
@@ -151,7 +161,11 @@ impl MlJobKind {
     pub fn needs_models(&self) -> bool {
         matches!(
             self,
-            Self::EmbedAsset | Self::DetectFaces | Self::RebuildPersonClusters
+            Self::EmbedAsset
+                | Self::DetectFaces
+                | Self::RebuildPersonClusters
+                | Self::Ocr
+                | Self::ClassifyPet
         )
     }
 }
@@ -197,6 +211,13 @@ impl MlWorker {
         if let Ok(rt) = MlRuntime::load(config) {
             *self.inner.runtime.lock().unwrap() = Some(Arc::new(rt));
         }
+    }
+
+    /// Install an already-built runtime (e.g. one the app also keeps in its
+    /// session for search re-rank). Both the worker and the session observe
+    /// the same `Arc<MlRuntime>` so draining and search stay consistent.
+    pub fn set_runtime(&self, runtime: Arc<MlRuntime>) {
+        *self.inner.runtime.lock().unwrap() = Some(runtime);
     }
 
     /// Drain one job off the queue. Returns the kind that was run (if any) and
@@ -277,6 +298,11 @@ fn drain_blocking(
                     MlJobKind::RebuildPersonClusters => {
                         super::worker_exec::run_rebuild_person_clusters(&conn, &ck)
                     }
+                    // D5/D9 follow-ups — a future `worker_exec::run_ocr` /
+                    // `run_classify_pet` drops in here. Until then the
+                    // queue drains these with ModelsUnavailable so the
+                    // ingest path doesn't wedge on pending rows.
+                    MlJobKind::Ocr | MlJobKind::ClassifyPet => Err(Error::ModelsUnavailable),
                     _ => unreachable!("needs_models covered above"),
                 }
             }

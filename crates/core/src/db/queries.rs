@@ -736,6 +736,35 @@ pub fn set_asset_pet(
     Ok(n > 0)
 }
 
+/// List every `(person_id, asset_id, taken_at_utc_day)` triple for a
+/// user whose face row has a resolved person + the asset has a
+/// non-null day stamp. Used by the "Person × Year" themed memories
+/// surface — yields the raw data the analytics module groups.
+pub fn list_person_asset_days_for_user(
+    conn: &Connection,
+    user_id: i64,
+) -> Result<Vec<(i64, i64, i64)>> {
+    let mut stmt = conn.prepare(
+        r"SELECT f.person_id, f.asset_id, a.taken_at_utc_day
+          FROM face f
+          JOIN asset a ON a.id = f.asset_id
+          JOIN source s ON s.id = a.source_id
+          WHERE f.person_id IS NOT NULL
+            AND a.taken_at_utc_day IS NOT NULL
+            AND s.owner_id = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![user_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 /// List every asset flagged `is_pet = 1` for a given owner, most
 /// recent first. Returns `(asset_id, taken_at_utc_day, pet_species_ct)`.
 /// Species remains sealed; callers open with the owner's master key.

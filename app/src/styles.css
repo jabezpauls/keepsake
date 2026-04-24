@@ -1450,6 +1450,17 @@ p.error {
     font-size: 0.9rem;
 }
 
+.memories-section-h {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.85rem;
+    color: var(--muted, rgba(255, 255, 255, 0.6));
+}
+
 /* ----- Smart albums (D4) ------------------------------------------------- */
 
 .smart-albums {
