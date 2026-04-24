@@ -80,7 +80,7 @@ pub fn on_this_day(today: NaiveDate, assets: &[(i64, i64)]) -> Vec<MemoryGroup> 
         })
         .collect();
     // Most-recent year first.
-    out.sort_unstable_by(|a, b| b.year.cmp(&a.year));
+    out.sort_unstable_by_key(|c| std::cmp::Reverse(c.year));
     out
 }
 
@@ -146,7 +146,7 @@ pub fn year_in_photos(today: NaiveDate, assets: &[(i64, i64)]) -> Vec<YearInPhot
             }
         })
         .collect();
-    out.sort_unstable_by(|a, b| b.year.cmp(&a.year));
+    out.sort_unstable_by_key(|c| std::cmp::Reverse(c.year));
     out
 }
 
