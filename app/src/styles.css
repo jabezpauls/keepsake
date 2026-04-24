@@ -169,6 +169,16 @@ p.error {
     color: #888;
     border-color: #444;
 }
+/* Button variant of the missing badge — same look as <span> but clickable,
+   since we use it to open the model-download wizard. */
+button.ml-badge {
+    font: inherit;
+    cursor: pointer;
+}
+button.ml-badge:hover {
+    filter: brightness(1.1);
+}
+
 .top-nav .ml-badge--missing {
     color: #c79a2f;
     border-color: #c79a2f;
@@ -1729,4 +1739,52 @@ p.error {
     border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
     color: inherit;
     border-radius: 4px;
+}
+
+/* ===== First-run model download wizard ============================= */
+
+.ml-wizard-summary {
+    margin: 0.5rem 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-2, rgba(255, 255, 255, 0.04));
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.ml-wizard-filelist {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0;
+}
+
+.ml-wizard-filelist li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+    font-size: 0.9rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ml-wizard-filelist li:last-child {
+    border-bottom: none;
+}
+
+.ml-wizard-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.2rem;
+}
+
+.ml-wizard-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--bg-2, rgba(255, 255, 255, 0.08));
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.ml-wizard-bar-fill {
+    height: 100%;
+    background: var(--accent, #5eb6ff);
+    transition: width 150ms ease-out;
 }

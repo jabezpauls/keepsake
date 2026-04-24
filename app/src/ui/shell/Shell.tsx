@@ -18,6 +18,7 @@ import Memories from "../memories/Memories";
 import SmartAlbums from "../smart_albums/SmartAlbums";
 import SmartAlbumDetail from "../smart_albums/SmartAlbumDetail";
 import Pets from "../pets/Pets";
+import ModelDownloadWizard from "../ml/ModelDownloadWizard";
 
 export default function Shell() {
     const view = useSession((s) => s.view);
@@ -49,6 +50,19 @@ export default function Shell() {
             window.clearInterval(h);
         };
     }, []);
+
+    const [wizardOpen, setWizardOpen] = useState(false);
+    // Auto-open the wizard on first unlock when the feature is compiled in but
+    // weights are missing. One-shot per session — the user can reopen from the
+    // badge afterwards. Tracked in sessionStorage so reloads of the dev server
+    // don't re-prompt mid-session.
+    useEffect(() => {
+        if (!ml) return;
+        if (!ml.models_available || ml.runtime_loaded) return;
+        if (sessionStorage.getItem("mv-wizard-prompted") === "1") return;
+        sessionStorage.setItem("mv-wizard-prompted", "1");
+        setWizardOpen(true);
+    }, [ml]);
 
     // Keyboard shortcut: `/` focuses the search view.
     useEffect(() => {
@@ -99,7 +113,7 @@ export default function Shell() {
                 {navButton("peers", "Peers")}
                 <span className="spacer" />
                 {hiddenUnlocked && <span className="hidden-badge">hidden</span>}
-                {ml && <MlBadge status={ml} />}
+                {ml && <MlBadge status={ml} onOpenWizard={() => setWizardOpen(true)} />}
                 {ml?.models_available && <ReindexButton />}
                 <button onClick={lock}>Lock</button>
             </nav>
@@ -132,6 +146,7 @@ export default function Shell() {
                 )}
                 {view.kind === "pets" && <Pets />}
             </section>
+            {wizardOpen && <ModelDownloadWizard onClose={() => setWizardOpen(false)} />}
         </div>
     );
 }
@@ -166,7 +181,13 @@ function ReindexButton() {
     );
 }
 
-function MlBadge({ status }: { status: MlStatus }) {
+function MlBadge({
+    status,
+    onOpenWizard,
+}: {
+    status: MlStatus;
+    onOpenWizard: () => void;
+}) {
     if (!status.models_available) {
         return (
             <span className="ml-badge ml-badge--off" title="Build without --features ml-models">
@@ -176,12 +197,13 @@ function MlBadge({ status }: { status: MlStatus }) {
     }
     if (!status.runtime_loaded) {
         return (
-            <span
+            <button
                 className="ml-badge ml-badge--missing"
-                title="Models feature on, but weights not loaded. Run scripts/download_models.sh."
+                title="Click to download the on-device AI models (~2 GB, one time)."
+                onClick={onOpenWizard}
             >
-                ML — no weights
-            </span>
+                ML — download models
+            </button>
         );
     }
     const queued = status.pending + status.running;

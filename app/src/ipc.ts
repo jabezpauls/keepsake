@@ -13,6 +13,9 @@ export type { IngestStatus } from "./bindings/IngestStatus";
 export type { MapPoint } from "./bindings/MapPoint";
 export type { MlStatus } from "./bindings/MlStatus";
 export type { MlReindexReport } from "./bindings/MlReindexReport";
+export type { ModelsStatus } from "./bindings/ModelsStatus";
+export type { ModelFileStatus } from "./bindings/ModelFileStatus";
+export type { DownloadEvent } from "./bindings/DownloadEvent";
 export type { PairingTicketView } from "./bindings/PairingTicketView";
 export type { PeerAcceptedView } from "./bindings/PeerAcceptedView";
 export type { ShareInviteView } from "./bindings/ShareInviteView";
@@ -170,6 +173,9 @@ export const api = {
     mlStatus: () => invoke<MlStatus>("ml_status"),
     mlModelsEnabled: () => invoke<boolean>("ml_models_enabled"),
     mlReindex: () => invoke<MlReindexReport>("ml_reindex"),
+    mlModelsStatus: () => invoke<import("./bindings/ModelsStatus").ModelsStatus>("ml_models_status"),
+    mlModelsDownload: () => invoke<null>("ml_models_download"),
+    mlRuntimeReload: () => invoke<MlStatus>("ml_runtime_reload"),
 
     // --- peers (Phase 3.1) ---------------------------------------------
     peerMyTicket: () => invoke<PairingTicketView>("peer_my_ticket"),
