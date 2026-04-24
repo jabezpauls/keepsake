@@ -60,56 +60,149 @@ pub fn ml_models_enabled() -> bool {
     mv_core::ml::MODELS_ENABLED
 }
 
-/// First-run wizard: which model files are present + valid.
+/// List every bundle the wizard can offer plus a GPU-aware recommendation.
+/// Off-flag this returns an empty list — the wizard hides itself.
+#[tauri::command]
+pub async fn ml_bundle_options() -> Result<serde_json::Value, String> {
+    wire(ml_bundle_options_impl().await)
+}
+
+async fn ml_bundle_options_impl() -> AppResult<serde_json::Value> {
+    #[cfg(feature = "ml-models")]
+    {
+        use mv_core::ml::bundles;
+        let have_gpu = bundles_have_gpu_probe();
+        let options: Vec<_> = bundles::ALL
+            .iter()
+            .map(|b| {
+                let total: u64 = b.files.iter().map(|f| f.approx_bytes).sum();
+                serde_json::json!({
+                    "id": b.id.as_str(),
+                    "display_name": b.display_name,
+                    "description": b.description,
+                    "clip_dim": b.clip_dim,
+                    "face_dim": b.face_dim,
+                    "approx_bytes": total,
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({
+            "options": options,
+            "recommended": bundles::recommended(have_gpu).as_str(),
+        }))
+    }
+    #[cfg(not(feature = "ml-models"))]
+    {
+        Ok(serde_json::json!({
+            "options": [],
+            "recommended": null,
+        }))
+    }
+}
+
+/// Probe whether an accelerator is available, so the wizard's default
+/// picks the right bundle. Piggy-backs on the existing deps_probe logic.
+#[cfg(feature = "ml-models")]
+fn bundles_have_gpu_probe() -> bool {
+    use mv_core::ml::deps_probe;
+    deps_probe::probe_cuda().all_resolved || deps_probe::probe_coreml().all_resolved
+}
+
+/// The bundle id persisted at `<vault>/models/bundle.json`, or null when
+/// the wizard has never run. Used by the wizard to pre-select the right
+/// option when the user reopens it.
+#[tauri::command]
+pub async fn ml_bundle_selected(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    wire(ml_bundle_selected_impl(&state).await)
+}
+
+async fn ml_bundle_selected_impl(state: &AppState) -> AppResult<Option<String>> {
+    #[cfg(feature = "ml-models")]
+    {
+        let model_dir = resolve_model_dir(state).await?;
+        let id =
+            mv_core::ml::manifest::read_selected_bundle(&model_dir).map(|b| b.as_str().to_string());
+        Ok(id)
+    }
+    #[cfg(not(feature = "ml-models"))]
+    {
+        let _ = state;
+        Ok(None)
+    }
+}
+
+/// First-run wizard: which files of a given bundle are present + valid.
 ///
 /// Always returns a shape the UI can consume. Off-flag we report a synthetic
 /// "feature disabled" snapshot so the wizard's UI gating has a single code
 /// path.
 #[tauri::command]
-pub async fn ml_models_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    wire(ml_models_status_impl(&state).await)
+pub async fn ml_models_status(
+    state: State<'_, AppState>,
+    #[allow(unused)] bundle: Option<String>,
+) -> Result<serde_json::Value, String> {
+    wire(ml_models_status_impl(&state, bundle).await)
 }
 
-async fn ml_models_status_impl(state: &AppState) -> AppResult<serde_json::Value> {
+async fn ml_models_status_impl(
+    state: &AppState,
+    bundle: Option<String>,
+) -> AppResult<serde_json::Value> {
     #[cfg(feature = "ml-models")]
     {
         let model_dir = resolve_model_dir(state).await?;
-        let snapshot = tokio::task::spawn_blocking(move || ml::downloader::survey(&model_dir))
-            .await
-            .map_err(AppError::from)??;
-        Ok(serde_json::to_value(snapshot).map_err(|e| AppError::Ingest(e.to_string()))?)
+        // Resolve the bundle to survey: explicit arg > persisted choice >
+        // Full (safe default when the wizard is just previewing options).
+        let bundle_id = resolve_requested_bundle(bundle.as_deref(), &model_dir);
+        let snapshot =
+            tokio::task::spawn_blocking(move || ml::downloader::survey(&model_dir, bundle_id))
+                .await
+                .map_err(AppError::from)??;
+        let mut v = serde_json::to_value(snapshot).map_err(|e| AppError::Ingest(e.to_string()))?;
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert(
+                "bundle".into(),
+                serde_json::Value::String(bundle_id.as_str().to_string()),
+            );
+        }
+        Ok(v)
     }
     #[cfg(not(feature = "ml-models"))]
     {
-        let _ = state;
+        let _ = (state, bundle);
         Ok(serde_json::json!({
             "files": [],
             "all_present_valid": false,
+            "bundle": null,
         }))
     }
 }
 
-/// Start downloading missing / corrupt model files into the resolved models
-/// directory. Streams [`ml::downloader::DownloadEvent`]s onto the
-/// `ml-download-event` Tauri channel so the wizard can render live progress.
-///
-/// Returns when the download completes (Ok) or when at least one file failed
-/// (Err). Either way the terminal `all_done` event fires — the error is a
-/// coarse signal; the detailed per-file outcomes live on the channel.
-///
-/// After a successful run the caller should invoke [`ml_runtime_reload`] so
-/// the badge flips from "no weights" to the actual execution provider.
+/// Start downloading missing / corrupt files of the chosen bundle into the
+/// resolved models directory. Streams [`ml::downloader::DownloadEvent`]s
+/// onto the `ml-download-event` Tauri channel so the wizard can render live
+/// progress. The bundle id is also persisted to `<vault>/models/bundle.json`
+/// on success so the loader's next boot picks it up without a wizard rerun.
 #[tauri::command]
-pub async fn ml_models_download(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    wire(ml_models_download_impl(app, &state).await)
+pub async fn ml_models_download(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    #[allow(unused)] bundle: Option<String>,
+) -> Result<(), String> {
+    wire(ml_models_download_impl(app, &state, bundle).await)
 }
 
 #[cfg(feature = "ml-models")]
-async fn ml_models_download_impl(app: AppHandle, state: &AppState) -> AppResult<()> {
+async fn ml_models_download_impl(
+    app: AppHandle,
+    state: &AppState,
+    bundle: Option<String>,
+) -> AppResult<()> {
     let model_dir = resolve_model_dir(state).await?;
+    let bundle_id = resolve_requested_bundle(bundle.as_deref(), &model_dir);
     tokio::task::spawn_blocking(move || -> AppResult<()> {
         let app_for_emit = app.clone();
-        ml::downloader::download_missing(&model_dir, move |event| {
+        ml::downloader::download_missing(&model_dir, bundle_id, move |event| {
             // Best-effort emit: if the frontend isn't listening, we still
             // finish the download. Tauri's Emitter returns Err only when
             // the app handle itself is gone (window closed mid-download).
@@ -123,10 +216,28 @@ async fn ml_models_download_impl(app: AppHandle, state: &AppState) -> AppResult<
 }
 
 #[cfg(not(feature = "ml-models"))]
-async fn ml_models_download_impl(_app: AppHandle, _state: &AppState) -> AppResult<()> {
+async fn ml_models_download_impl(
+    _app: AppHandle,
+    _state: &AppState,
+    _bundle: Option<String>,
+) -> AppResult<()> {
     Err(AppError::Ingest(
         "ml-models feature not compiled into this build".into(),
     ))
+}
+
+#[cfg(feature = "ml-models")]
+fn resolve_requested_bundle(
+    explicit: Option<&str>,
+    model_dir: &std::path::Path,
+) -> mv_core::ml::bundles::BundleId {
+    if let Some(s) = explicit {
+        if let Some(id) = mv_core::ml::bundles::BundleId::from_str(s) {
+            return id;
+        }
+    }
+    mv_core::ml::manifest::read_selected_bundle(model_dir)
+        .unwrap_or(mv_core::ml::bundles::BundleId::Full)
 }
 
 /// After a successful download, re-attempt runtime bootstrap so the ORT
@@ -231,6 +342,13 @@ pub fn try_bootstrap_runtime_no_drain(session: &Session, vault_root: &Path) {
         let model_dir = std::env::var_os("MV_MODELS")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| vault_root.join("models"));
+        // The wizard records the user's bundle choice at
+        // `<models>/bundle.json`. If the file isn't there, assume Full —
+        // that matches the pre-Lite behaviour for existing vaults where
+        // the wizard hasn't run yet but `scripts/download_models.sh` may
+        // have dropped Full-bundle weights into place.
+        let bundle = mv_core::ml::manifest::read_selected_bundle(&model_dir)
+            .unwrap_or(mv_core::ml::bundles::BundleId::Full);
         // Always `Auto`. ORT silently ignores providers whose runtime deps
         // don't resolve, and `mv_core::ml::loader::resolve_actual_provider`
         // probes each candidate's dylibs so `ml_status.execution_provider`
@@ -239,6 +357,7 @@ pub fn try_bootstrap_runtime_no_drain(session: &Session, vault_root: &Path) {
         let cfg = mv_core::ml::MlConfig {
             model_dir,
             execution_provider: mv_core::ml::ExecutionProvider::Auto,
+            bundle,
         };
         match mv_core::ml::MlRuntime::load(cfg) {
             Ok(rt) => {

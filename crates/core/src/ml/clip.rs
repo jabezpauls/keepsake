@@ -20,10 +20,11 @@ use super::loader::SharedSession;
 use super::tokenizer::{ClipTokenizer, CLIP_CTX};
 use crate::{Error, Result};
 
-/// CLIP ViT-L/14 input size. FROZEN.
+/// CLIP input resolution. Both ViT-L/14 and ViT-B/32 take 224×224 — OpenAI
+/// chose it for all their CLIP variants and the ViT-B/32's 32-px patches
+/// still tile over this input size, so the constant is shared across
+/// bundles.
 pub const CLIP_INPUT: u32 = 224;
-/// CLIP ViT-L/14 embedding dimension. FROZEN.
-pub const CLIP_DIM: usize = 768;
 
 /// OpenAI canonical per-channel means (RGB). FROZEN.
 pub const OPENAI_MEAN: [f32; 3] = [0.481_454_66, 0.457_827_5, 0.408_210_73];
@@ -130,26 +131,22 @@ fn run_visual(session: &SharedSession, tensor: Array4<f32>) -> Result<Vec<f32>> 
         .try_extract_tensor::<f32>()
         .map_err(|e| Error::Media(format!("clip extract: {e}")))?;
 
-    // Expect [1, 768] (pooled). Some exports emit [1, 1, 768] or [1, 257, 768]
-    // (token sequence) — reject those with a specific shape error; if we ever
-    // ship a model like that we'll need an explicit pooling step here.
+    // Expect pooled `[1, dim]`. Some exports emit `[1, 1, dim]` or
+    // `[1, 257, dim]` (token sequence) — reject those with a specific shape
+    // error; if we ever ship a model like that we'll need an explicit
+    // pooling step here. `dim` itself is runtime-driven by the bundle
+    // (ViT-L/14 → 768, ViT-B/32 → 512); the loader validates it matches
+    // `BundleSpec::clip_dim` once at startup, so callers can trust the
+    // length here without re-checking.
     let dims = shape.as_ref();
-    let last = *dims
-        .last()
-        .ok_or(Error::MlModelShape("clip_visual.onnx: empty output shape"))?;
-    if last != CLIP_DIM as i64 {
+    if dims.len() != 2 || dims[0] != 1 {
         return Err(Error::MlModelShape(
-            "clip_visual.onnx: last-dim != 768, unexpected export",
+            "clip_visual.onnx: expected pooled [1, dim] output",
         ));
     }
     if data.len() as i64 != dims.iter().product::<i64>() {
         return Err(Error::MlModelShape(
             "clip_visual.onnx: buffer length disagrees with shape",
-        ));
-    }
-    if data.len() != CLIP_DIM {
-        return Err(Error::MlModelShape(
-            "clip_visual.onnx: pooled output expected, got multi-token tensor",
         ));
     }
 
@@ -158,9 +155,14 @@ fn run_visual(session: &SharedSession, tensor: Array4<f32>) -> Result<Vec<f32>> 
     Ok(arr.to_vec())
 }
 
-/// Tokenise + embed a natural-language query into a 768-d unit vector.
-/// Returned vector is directly comparable (cosine == dot) against the
-/// 768-d vectors stored in `asset_vec` for visual search.
+/// Run CLIP visual on preprocessed image bytes.
+/// Returns a unit vector whose length matches the loaded bundle's CLIP
+/// embedding dim (768 for ViT-L/14, 512 for ViT-B/32).
+/// Tokenise + embed a natural-language query into a unit vector directly
+/// comparable (cosine == dot) against the vectors stored in `asset_vec` —
+/// provided both were produced by the same bundle. After a bundle switch
+/// the two have different lengths; the search path then degrades to the
+/// metadata-only fallback until reindex catches up.
 pub fn embed_text(
     session: &SharedSession,
     tokenizer: &ClipTokenizer,
@@ -192,15 +194,14 @@ pub fn embed_text(
         .try_extract_tensor::<f32>()
         .map_err(|e| Error::Media(format!("clip text extract: {e}")))?;
     let dims = shape.as_ref();
-    let last = *dims
-        .last()
-        .ok_or(Error::MlModelShape("clip_textual.onnx: empty output shape"))?;
-    if last != CLIP_DIM as i64 {
-        return Err(Error::MlModelShape("clip_textual.onnx: last-dim != 768"));
-    }
-    if data.len() != CLIP_DIM {
+    if dims.len() != 2 || dims[0] != 1 {
         return Err(Error::MlModelShape(
-            "clip_textual.onnx: pooled output expected, got multi-token tensor",
+            "clip_textual.onnx: expected pooled [1, dim] output",
+        ));
+    }
+    if data.len() as i64 != dims.iter().product::<i64>() {
+        return Err(Error::MlModelShape(
+            "clip_textual.onnx: buffer length disagrees with shape",
         ));
     }
     let mut arr = Array1::from_vec(data.to_vec());
