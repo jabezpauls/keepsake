@@ -219,6 +219,15 @@ export const api = {
     listTrips: () => invoke<TripView[]>("list_trips"),
     memoriesOnThisDay: () =>
         invoke<MemoryGroupView[]>("memories_on_this_day"),
+    memoriesYearInPhotos: () =>
+        invoke<import("./bindings/YearInPhotosView").YearInPhotosView[]>(
+            "memories_year_in_photos",
+        ),
+    memoriesPersonYear: (minAssets?: number) =>
+        invoke<import("./bindings/PersonYearMemoryView").PersonYearMemoryView[]>(
+            "memories_person_year",
+            { minAssets: minAssets ?? null },
+        ),
 
     // --- smart albums (D4) ---------------------------------------------
     createSmartAlbum: (name: string, rule: SmartRuleView) =>

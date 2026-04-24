@@ -343,6 +343,31 @@ pub struct MemoryGroupView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+/// D3-follow-up §8b "year in photos" card.
+pub struct YearInPhotosView {
+    #[ts(type = "number")]
+    pub year: i32,
+    #[ts(type = "number")]
+    pub asset_count: u32,
+    /// Up to 6 representative asset ids drawn across the year.
+    #[ts(type = "Array<number>")]
+    pub highlights: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+/// D3-follow-up §8b "Person X in Year Y" card.
+pub struct PersonYearMemoryView {
+    #[ts(type = "number")]
+    pub person_id: i64,
+    #[ts(type = "number")]
+    pub year: i32,
+    #[ts(type = "Array<number>")]
+    pub asset_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 pub struct TripView {
     #[ts(type = "number")]
     pub id: i64,

@@ -81,6 +81,8 @@ pub fn run() {
             commands::analytics::detect_trips_run,
             commands::analytics::list_trips,
             commands::analytics::memories_on_this_day,
+            commands::analytics::memories_year_in_photos,
+            commands::analytics::memories_person_year,
             commands::analytics::create_smart_album,
             commands::analytics::list_smart_albums,
             commands::analytics::refresh_smart_album,
