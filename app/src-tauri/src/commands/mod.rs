@@ -17,4 +17,5 @@ pub mod people;
 pub mod search;
 pub mod share;
 pub mod sources;
+pub mod text_search;
 pub mod timeline;

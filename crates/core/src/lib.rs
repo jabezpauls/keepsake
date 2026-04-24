@@ -4,6 +4,7 @@
 //! declarations exist here from the start so the dependency graph compiles cleanly.
 
 pub mod analytics;
+pub mod blind_text;
 pub mod cas;
 pub mod crypto;
 pub mod db;

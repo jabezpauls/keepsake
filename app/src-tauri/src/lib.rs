@@ -81,6 +81,8 @@ pub fn run() {
             commands::analytics::refresh_smart_album,
             commands::analytics::delete_smart_album,
             commands::analytics::smart_album_page,
+            commands::text_search::index_asset_text,
+            commands::text_search::search_text_exact,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

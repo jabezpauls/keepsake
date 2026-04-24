@@ -75,6 +75,12 @@ export const api = {
     listUsers: () => invoke<UserSummaryView[]>("list_users"),
     listLocalPeers: () => invoke<UserSummaryView[]>("list_local_peers"),
 
+    // --- blind-indexed text search (D5) --------------------------------
+    indexAssetText: (assetId: number, text: string) =>
+        invoke<number>("index_asset_text", { assetId, text }),
+    searchTextExact: (query: string, limit?: number) =>
+        invoke<SearchHitView[]>("search_text_exact", { query, limit: limit ?? null }),
+
     // --- sources --------------------------------------------------------
     addSource: (args: {
         name: string;

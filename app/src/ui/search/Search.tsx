@@ -12,6 +12,11 @@ export default function Search() {
     const currentView = useSession((s) => s.view);
 
     const [text, setText] = useState("");
+    const [exactText, setExactText] = useState("");
+    const [exactResults, setExactResults] = useState<
+        import("../../ipc").SearchHitView[] | null
+    >(null);
+    const [exactBusy, setExactBusy] = useState(false);
     const [camera, setCamera] = useState("");
     const [lens, setLens] = useState("");
     const [toggles, setToggles] = useState<Record<ToggleKey, boolean | undefined>>({
@@ -29,7 +34,19 @@ export default function Search() {
         enabled: !!request,
     });
 
+    const runExact = async () => {
+        setExactBusy(true);
+        try {
+            const hits = await api.searchTextExact(exactText, 200);
+            setExactResults(hits);
+            setRequest(null);
+        } finally {
+            setExactBusy(false);
+        }
+    };
+
     const run = () => {
+        setExactResults(null);
         const req: SearchRequest = {
             text: text.trim() || null,
             person_ids: [],
@@ -109,34 +126,85 @@ export default function Search() {
                     onChange={(e) => setLens(e.target.value)}
                 />
             </div>
+            <form
+                className="search-bar"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    if (exactText.trim()) void runExact();
+                }}
+            >
+                <input
+                    placeholder="Exact text (whole words, OCR + captions)"
+                    value={exactText}
+                    onChange={(e) => setExactText(e.target.value)}
+                    disabled={exactBusy}
+                />
+                <button type="submit" disabled={!exactText.trim() || exactBusy}>
+                    {exactBusy ? "Searching…" : "Exact"}
+                </button>
+            </form>
 
             <div className="search-results">
-                {query.isLoading && <div className="timeline-loading">Searching…</div>}
-                {query.data?.length === 0 && <div className="timeline-empty">No matches.</div>}
-                <div className="timeline-row wrap">
-                    {query.data?.map((hit, idx) => (
-                        <button
-                            key={hit.id}
-                            className="timeline-cell"
-                            onClick={() =>
-                                setView({
-                                    kind: "asset",
-                                    id: hit.id,
-                                    back: currentView,
-                                    neighbors: query.data!.map((h) => h.id),
-                                    index: idx,
-                                })
-                            }
-                        >
-                            <ThumbImage assetId={hit.id} size={256} mime={hit.mime} alt="" />
-                            {hit.is_video && <span className="cell-badge">▶</span>}
-                            {hit.is_live && <span className="cell-badge">LIVE</span>}
-                            {hit.score !== null && (
-                                <span className="cell-score">{hit.score.toFixed(2)}</span>
-                            )}
-                        </button>
-                    ))}
-                </div>
+                {exactResults !== null && (
+                    <>
+                        {exactResults.length === 0 && (
+                            <div className="timeline-empty">No exact-text matches.</div>
+                        )}
+                        <div className="timeline-row wrap">
+                            {exactResults.map((hit, idx) => (
+                                <button
+                                    key={hit.id}
+                                    className="timeline-cell"
+                                    onClick={() =>
+                                        setView({
+                                            kind: "asset",
+                                            id: hit.id,
+                                            back: currentView,
+                                            neighbors: exactResults.map((h) => h.id),
+                                            index: idx,
+                                        })
+                                    }
+                                >
+                                    <ThumbImage assetId={hit.id} size={256} mime={hit.mime} alt="" />
+                                    {hit.is_video && <span className="cell-badge">▶</span>}
+                                    {hit.is_live && <span className="cell-badge">LIVE</span>}
+                                </button>
+                            ))}
+                        </div>
+                    </>
+                )}
+                {exactResults === null && query.isLoading && (
+                    <div className="timeline-loading">Searching…</div>
+                )}
+                {exactResults === null && query.data?.length === 0 && (
+                    <div className="timeline-empty">No matches.</div>
+                )}
+                {exactResults === null && (
+                    <div className="timeline-row wrap">
+                        {query.data?.map((hit, idx) => (
+                            <button
+                                key={hit.id}
+                                className="timeline-cell"
+                                onClick={() =>
+                                    setView({
+                                        kind: "asset",
+                                        id: hit.id,
+                                        back: currentView,
+                                        neighbors: query.data!.map((h) => h.id),
+                                        index: idx,
+                                    })
+                                }
+                            >
+                                <ThumbImage assetId={hit.id} size={256} mime={hit.mime} alt="" />
+                                {hit.is_video && <span className="cell-badge">▶</span>}
+                                {hit.is_live && <span className="cell-badge">LIVE</span>}
+                                {hit.score !== null && (
+                                    <span className="cell-score">{hit.score.toFixed(2)}</span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -324,6 +324,9 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
                         ))}
                     </div>
 
+                    <SearchableTextEditor assetId={id} />
+
+
                     {detail.exif_json && (
                         <details className="exif-panel">
                             <summary>Full EXIF</summary>
@@ -355,4 +358,46 @@ function formatExifJson(raw: string): string {
     } catch {
         return raw;
     }
+}
+
+function SearchableTextEditor({ assetId }: { assetId: number }) {
+    const [text, setText] = useState("");
+    const [status, setStatus] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+
+    const save = async () => {
+        setBusy(true);
+        setStatus(null);
+        try {
+            const n = await api.indexAssetText(assetId, text);
+            setStatus(n === 0 ? "Cleared searchable text." : `Indexed ${n} tokens.`);
+        } catch (e) {
+            setStatus(String(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="searchable-text-editor">
+            <strong>Searchable text</strong>
+            <p className="muted">
+                Whole-word match. Tokens are HMAC'd under your search key, so
+                the index leaks nothing in plaintext.
+            </p>
+            <textarea
+                rows={3}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Caption, tags, anything you want to find this by…"
+                disabled={busy}
+            />
+            <div className="searchable-text-actions">
+                <button onClick={save} disabled={busy}>
+                    {busy ? "Saving…" : "Save"}
+                </button>
+                {status && <span className="muted">{status}</span>}
+            </div>
+        </div>
+    );
 }
