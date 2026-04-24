@@ -58,6 +58,14 @@ jobs:
     name: cargo audit + deny
     runs-on: ubuntu-latest
     continue-on-error: true
+    # `rustsec/audit-check` publishes findings as a check run on the
+    # commit; that needs `checks: write`. Without it the action exits
+    # with "Resource not accessible by integration" even when the
+    # actual audit succeeds.
+    permissions:
+      contents: read
+      checks: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
