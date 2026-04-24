@@ -1,0 +1,217 @@
+name: Release
+
+# Cross-platform packaging for Keepsake.
+#
+# Trigger paths:
+# - Pushing a `v*` tag (e.g. `v0.1.0`) builds every matrix leg, then attaches
+#   the resulting installers to a draft GitHub Release named after the tag.
+# - `workflow_dispatch` lets a maintainer kick a build off `main` for ad-hoc
+#   verification — no release is created in that path; artifacts are uploaded
+#   to the workflow run instead.
+#
+# What ships per OS:
+#   Linux x86_64    → .deb + .rpm + .AppImage      (ubuntu-latest)
+#   macOS ARM       → .app + .dmg                  (macos-14)
+#   macOS Intel     → .app + .dmg                  (macos-13)
+#   Windows x86_64  → .msi + .exe (NSIS)           (windows-latest)
+#
+# Each binary bundles `libonnxruntime` for the host architecture so the user
+# doesn't need to install ONNX Runtime separately. The bundled ORT is the
+# CPU-only build (~15 MB compressed) — GPU users can swap in a CUDA-capable
+# libonnxruntime via `$ORT_DYLIB_PATH` at runtime.
+#
+# Code signing + notarization are NOT wired into this workflow yet — see
+# `docs/release.md` for the secrets the maintainer adds when going public.
+#
+# Security note: `github.ref_name` flows into action `with:` inputs only;
+# it never lands in a `run:` shell block. All `run:` scripts use static
+# matrix values exported via `env:` rather than `${{ ... }}` substitution.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ORT_VERSION: 1.22.0
+  PNPM_VERSION: 10.33.0
+  NODE_VERSION: 22
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ort_archive: onnxruntime-linux-x64-1.22.0.tgz
+            ort_dirname: onnxruntime-linux-x64-1.22.0
+            ort_lib_pattern: lib/libonnxruntime.so*
+
+          # macos-15-intel: Intel-chip runner (the legacy macos-13 label was
+          # retired by GitHub in early 2026). aarch64 build runs on
+          # macos-14 (Apple Silicon).
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            ort_archive: onnxruntime-osx-x86_64-1.22.0.tgz
+            ort_dirname: onnxruntime-osx-x86_64-1.22.0
+            ort_lib_pattern: lib/libonnxruntime*.dylib
+
+          - os: macos-14
+            target: aarch64-apple-darwin
+            ort_archive: onnxruntime-osx-arm64-1.22.0.tgz
+            ort_dirname: onnxruntime-osx-arm64-1.22.0
+            ort_lib_pattern: lib/libonnxruntime*.dylib
+
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ort_archive: onnxruntime-win-x64-1.22.0.zip
+            ort_dirname: onnxruntime-win-x64-1.22.0
+            ort_lib_pattern: lib/onnxruntime.dll
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Per-OS cache so Linux's apt-installed system libs don't poison
+          # the macOS run when the action's cache key normaliser collapses
+          # the OS dimension.
+          key: ${{ matrix.target }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare "pnpm@$PNPM_VERSION" --activate
+        env:
+          PNPM_VERSION: ${{ env.PNPM_VERSION }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsodium-dev libheif-dev \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev \
+            libavfilter-dev libavdevice-dev \
+            libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev \
+            libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            libssl-dev pkg-config build-essential
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          # ffmpeg pulls in the codec libs that `ffmpeg-next` links against;
+          # libheif handles HEIC ingest. libsodium is bundled by
+          # libsodium-sys-stable so we don't need it from brew.
+          brew install ffmpeg pkg-config libheif
+
+      - name: Install Windows build dependencies (vcpkg)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # vcpkg ships pre-installed on the Windows runner. We only need to
+          # install the native libs that mv-core's media ingest pipeline
+          # depends on; libsodium-sys-stable already vendors libsodium.
+          vcpkg install ffmpeg libheif --triplet x64-windows
+          {
+            echo "PKG_CONFIG_PATH=$VCPKG_INSTALLATION_ROOT/installed/x64-windows/lib/pkgconfig"
+            echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT"
+          } >> "$GITHUB_ENV"
+
+      - name: Stage ONNX Runtime dylib
+        shell: bash
+        env:
+          ORT_VERSION: ${{ env.ORT_VERSION }}
+          ORT_ARCHIVE: ${{ matrix.ort_archive }}
+          ORT_DIRNAME: ${{ matrix.ort_dirname }}
+          ORT_LIB_PATTERN: ${{ matrix.ort_lib_pattern }}
+        run: |
+          set -euo pipefail
+          mkdir -p app/src-tauri/resources
+          ORT_BASE="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}"
+          curl -fsSL -o ort.archive "${ORT_BASE}/${ORT_ARCHIVE}"
+          case "$ORT_ARCHIVE" in
+            *.zip)  unzip -q ort.archive ;;
+            *.tgz)  tar -xzf ort.archive ;;
+          esac
+          # Glob into the resources/ dir; tauri.conf.json bundles `resources/*`
+          # which lands them at the canonical platform path at install time.
+          cp $ORT_DIRNAME/$ORT_LIB_PATTERN app/src-tauri/resources/
+          ls -la app/src-tauri/resources/
+
+      - name: Install pnpm packages
+        shell: bash
+        run: pnpm --filter app install --frozen-lockfile=false
+
+      - name: Build + package
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS notarization secrets — only present once the maintainer
+          # has wired them up; otherwise the action skips notarization.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Tauri's bundler skips signing when the cert vars are empty so
+          # this is safe to leave for unsigned builds.
+        with:
+          # `--features ml-models` activates the on-device ML pipeline —
+          # CLIP + face recognition + OCR scaffolding compile in. CUDA /
+          # CoreML EPs activate at runtime if the user installs the GPU
+          # ONNX Runtime variant.
+          args: --features ml-models --target ${{ matrix.target }}
+          tagName: ${{ github.ref_name }}
+          releaseName: Keepsake ${{ github.ref_name }}
+          releaseBody: |
+            ### What's bundled
+            - On-device AI features (CLIP semantic search, face recognition,
+              OCR scaffolding) — first run prompts to download ~790 MB
+              (Lite bundle) or ~1.5 GB (Full bundle) of ONNX weights.
+            - CPU-capable libonnxruntime baked into the installer.
+            - GPU users: install the matching CUDA / CoreML ONNX Runtime
+              variant and point `ORT_DYLIB_PATH` at it for inference
+              acceleration.
+
+            ### Verifying integrity
+            Each artifact's SHA-256 is recorded in the action run logs.
+          releaseDraft: true
+          prerelease: false
+          projectPath: app
+
+      - name: Upload artifacts (workflow_dispatch only)
+        # On a tag push, tauri-action attaches everything to the GitHub
+        # Release. For manual triggers there's no release, so we capture
+        # the bundles in the workflow run instead.
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: keepsake-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/bundle/**/*
+          if-no-files-found: warn
+          retention-days: 14

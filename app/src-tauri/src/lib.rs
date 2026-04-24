@@ -12,6 +12,7 @@ pub mod errors;
 pub mod state;
 
 use state::{default_vault_root, AppState};
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -29,6 +30,42 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            // Point ORT at the libonnxruntime shipped inside the app bundle.
+            // Done in the setup hook (rather than `main`) because Tauri's
+            // path resolver knows the canonical resource directory per
+            // bundle format — `Contents/Resources/` on macOS, alongside the
+            // exe on Windows, `/usr/lib/<identifier>/` on Linux DEB, the
+            // mounted root on AppImage. A manual override via
+            // `$ORT_DYLIB_PATH` always wins.
+            if std::env::var_os("ORT_DYLIB_PATH").is_none() {
+                if let Ok(resource_dir) = app.path().resource_dir() {
+                    // Array-form `bundle.resources` preserves the source-tree
+                    // path inside the bundle, so a workspace file at
+                    // `app/src-tauri/resources/libonnxruntime.so` lands at
+                    // `<resource_dir>/resources/libonnxruntime.so`.
+                    let candidates: &[&str] = &[
+                        "resources/libonnxruntime.so",
+                        "resources/libonnxruntime.dylib",
+                        "resources/onnxruntime.dll",
+                        // Some Tauri layouts (e.g. installer .exe variants)
+                        // flatten the `resources/` segment.
+                        "libonnxruntime.so",
+                        "libonnxruntime.dylib",
+                        "onnxruntime.dll",
+                    ];
+                    for name in candidates {
+                        let p = resource_dir.join(name);
+                        if p.is_file() {
+                            std::env::set_var("ORT_DYLIB_PATH", &p);
+                            tracing::info!(path = %p.display(), "bundled ORT dylib selected");
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::auth::user_exists,
             commands::auth::create_user,

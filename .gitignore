@@ -8,6 +8,14 @@ Cargo.lock.*
 # Vendored runtimes (ONNX / CUDA — operators fetch locally, never ship)
 /vendor
 
+# Tauri bundle staging — CI populates this with the platform-specific
+# libonnxruntime before `cargo tauri build`. Local devs may also drop
+# their dev libonnxruntime here for `cargo tauri dev` packaging tests.
+/app/src-tauri/resources/libonnxruntime.so
+/app/src-tauri/resources/libonnxruntime.so.*
+/app/src-tauri/resources/libonnxruntime.dylib
+/app/src-tauri/resources/onnxruntime.dll
+
 # Local experiments / ad-hoc probes
 /crates/core/examples/ml_probe.rs
 /crates/core/examples/search_probe.rs
