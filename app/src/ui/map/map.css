@@ -6,20 +6,27 @@
  */
 
 :root {
+    /* Default = dark map (matches the dark canvas on the rest of the app). */
     --map-bg: #0a0e14;
+    --map-land: #1f2a3c;
+    --map-land-stroke: #2c3a52;
     --map-grid: #1c2535;
     --map-grid-strong: #2a3548;
 }
 
 :root[data-theme="light"],
 :root:not([data-theme]) {
-    --map-bg: #eef2f7;
+    --map-bg: #eaf0f6;
+    --map-land: #ffffff;
+    --map-land-stroke: #c4cdd9;
     --map-grid: #d6dde7;
     --map-grid-strong: #b8c2d0;
 }
 
 :root[data-theme="dark"] {
     --map-bg: #0a0e14;
+    --map-land: #1f2a3c;
+    --map-land-stroke: #2c3a52;
     --map-grid: #1c2535;
     --map-grid-strong: #2a3548;
 }
@@ -27,6 +34,8 @@
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
         --map-bg: #0a0e14;
+        --map-land: #1f2a3c;
+        --map-land-stroke: #2c3a52;
         --map-grid: #1c2535;
         --map-grid-strong: #2a3548;
     }

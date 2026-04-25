@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, MapPin, Minus, Plus } from "lucide-react";
+import { feature } from "topojson-client";
+import { geoEquirectangular, geoPath } from "d3-geo";
+import type { Topology } from "topojson-specification";
+import type { Feature, GeometryObject } from "geojson";
 import { api } from "../../ipc";
 import { useSession } from "../../state/session";
 import ThumbImage from "../timeline/ThumbImage";
 import type { MapPoint } from "../../bindings/MapPoint";
 import { Button, EmptyState, IconButton } from "../../components";
+// Natural Earth land-110m — landmass-only TopoJSON, ~55 KB. Bundled
+// statically by Vite so the map renders fully offline (Tauri invariant).
+import landTopo from "world-atlas/land-110m.json";
 import "./map.css";
 
 // Equirectangular projection: 720 px ≈ 360° lon, 360 px ≈ 180° lat.
@@ -13,6 +20,19 @@ import "./map.css";
 // it (shrink the box = zoom in) and pan by translating cx/cy.
 const W = 720;
 const H = 360;
+
+// Pre-compute the land path once. d3-geo's equirectangular at
+// scale = W/(2π) ≈ 114.59 gives one full 360° wrap across W pixels,
+// which matches our scatter projection (lon/360 * W). The path string
+// is identical regardless of zoom — vector strokes scale automatically.
+const landFeature = feature(
+    landTopo as unknown as Topology,
+    (landTopo as unknown as Topology).objects.land,
+) as unknown as Feature<GeometryObject>;
+const landProjection = geoEquirectangular()
+    .scale(W / (2 * Math.PI))
+    .translate([W / 2, H / 2]);
+const landPath = geoPath(landProjection)(landFeature) ?? "";
 
 interface Viewport {
     /** Centre of the visible window in projection units (0,0 = world centre). */
@@ -254,6 +274,21 @@ export default function MapView() {
                     height={H * 9}
                     fill="var(--map-bg)"
                 />
+
+                {/* Natural Earth landmass — drawn 3× across the longitudinal
+                 * axis so panning past the antimeridian still shows continents
+                 * instead of empty void. Vector strokes auto-scale with zoom. */}
+                {[-W, 0, W].map((dx) => (
+                    <path
+                        key={`land-${dx}`}
+                        d={landPath}
+                        transform={`translate(${dx}, 0)`}
+                        fill="var(--map-land)"
+                        stroke="var(--map-land-stroke)"
+                        strokeWidth={0.5 / viewport.zoom}
+                        strokeLinejoin="round"
+                    />
+                ))}
 
                 {/* Latitude / longitude graticule — every 30° in lat, 60° in lon. */}
                 {[-60, -30, 0, 30, 60].map((lat) => {
