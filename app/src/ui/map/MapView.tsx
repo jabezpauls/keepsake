@@ -445,20 +445,22 @@ interface ClusterRaw {
     avgLon: number;
 }
 
-// Compute the viewport that fits every point with 10% margin. Keeps the
-// canvas centred on the bounding-box centroid; zoom picks whichever axis
-// is the binding constraint.
+// Compute the viewport that fits the *dense* region of points with 10%
+// margin. Uses the 5th–95th percentile of lat/lon instead of raw min/max
+// so a handful of far-flung outliers (e.g. an old phone backup with one
+// trip to Tokyo amid 600 photos in Bangalore) doesn't pull the fit out
+// to a global bbox centred over open ocean. Outliers stay visible — they
+// just don't dictate the initial frame.
 function fitToPoints(points: MapPoint[]): Viewport {
-    let minLat = 90;
-    let maxLat = -90;
-    let minLon = 180;
-    let maxLon = -180;
-    for (const p of points) {
-        if (p.lat < minLat) minLat = p.lat;
-        if (p.lat > maxLat) maxLat = p.lat;
-        if (p.lon < minLon) minLon = p.lon;
-        if (p.lon > maxLon) maxLon = p.lon;
-    }
+    if (points.length === 0) return INITIAL_VIEWPORT;
+    const lats = points.map((p) => p.lat).sort((a, b) => a - b);
+    const lons = points.map((p) => p.lon).sort((a, b) => a - b);
+    const lo = (xs: number[]) => xs[Math.floor(xs.length * 0.05)] ?? xs[0];
+    const hi = (xs: number[]) => xs[Math.floor(xs.length * 0.95)] ?? xs[xs.length - 1];
+    const minLat = lo(lats);
+    const maxLat = hi(lats);
+    const minLon = lo(lons);
+    const maxLon = hi(lons);
     const cLat = (minLat + maxLat) / 2;
     const cLon = (minLon + maxLon) / 2;
     const spanLat = Math.max(maxLat - minLat, 1);
@@ -478,8 +480,11 @@ function fitToPoints(points: MapPoint[]): Viewport {
     };
 }
 
+// Beyond ~16× we're not rendering tile detail, so further zoom just
+// scatters cluster bubbles across empty canvas without surfacing more
+// information. Floor stays at 1× (full world).
 function clampZoom(z: number): number {
-    return Math.max(1, Math.min(64, z));
+    return Math.max(1, Math.min(16, z));
 }
 
 // Anchored zoom — the cursor stays put while the world scales around it.

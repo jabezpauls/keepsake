@@ -23,6 +23,14 @@ export default function ThumbImage({ assetId, size, mime, alt, className }: Prop
             try {
                 const bytes = await api.assetThumbnail(assetId, size);
                 if (cancelled) return;
+                // Backend returns an empty byte array when no thumbnail is
+                // cached yet (e.g. dev mock IPC, unindexed asset). Treat
+                // that as a failure so the fallback renders instead of a
+                // broken-image icon.
+                if (bytes.length === 0) {
+                    setFailed(true);
+                    return;
+                }
                 // Thumbnails are always WebP regardless of source mime.
                 currentUrl = bytesToBlobUrl(bytes, "image/webp");
                 setUrl(currentUrl);
