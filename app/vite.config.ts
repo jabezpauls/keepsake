@@ -8,6 +8,37 @@ export default defineConfig(async () => ({
 
     // Prevent Vite from obscuring Rust errors
     clearScreen: false,
+
+    // Phase 9 build polish: split vendor + framer-motion + radix into
+    // their own chunks so the warning about >500 KB main bundle goes
+    // away. Each chunk lazy-loads naturally because Tauri bundles
+    // everything into the same WebView once the user is past Unlock —
+    // the split only matters at first paint.
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    react: ["react", "react-dom", "react-dom/client"],
+                    query: ["@tanstack/react-query", "@tanstack/react-virtual"],
+                    motion: ["framer-motion"],
+                    radix: [
+                        "@radix-ui/react-dialog",
+                        "@radix-ui/react-dropdown-menu",
+                        "@radix-ui/react-popover",
+                        "@radix-ui/react-tooltip",
+                        "@radix-ui/react-tabs",
+                        "@radix-ui/react-toggle-group",
+                        "@radix-ui/react-scroll-area",
+                        "@radix-ui/react-slider",
+                        "@radix-ui/react-toast",
+                    ],
+                    cmdk: ["cmdk"],
+                    icons: ["lucide-react"],
+                },
+            },
+        },
+    },
+
     server: {
         port: 5180,
         strictPort: true,
