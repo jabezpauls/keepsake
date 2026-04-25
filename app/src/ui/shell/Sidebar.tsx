@@ -158,6 +158,13 @@ export function Sidebar({
                     onClick={() => setView({ kind: "map" })}
                 />
                 <PinnedLink
+                    icon={<MapPin size={16} />}
+                    label="Places"
+                    active={view.kind === "places" || view.kind === "place"}
+                    collapsed={collapsed}
+                    onClick={() => setView({ kind: "places" })}
+                />
+                <PinnedLink
                     icon={<Star size={16} />}
                     label="Smart albums"
                     active={view.kind === "smart_albums" || view.kind === "smart_album"}

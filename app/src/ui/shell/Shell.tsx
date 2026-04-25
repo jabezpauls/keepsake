@@ -25,6 +25,8 @@ import Memories from "../memories/Memories";
 import SmartAlbums from "../smart_albums/SmartAlbums";
 import SmartAlbumDetail from "../smart_albums/SmartAlbumDetail";
 import Pets from "../pets/Pets";
+import Places from "../places/Places";
+import PlaceDetail from "../places/PlaceDetail";
 import ModelDownloadWizard from "../ml/ModelDownloadWizard";
 import "./shell.css";
 
@@ -211,10 +213,10 @@ function ViewHost({ view }: { view: View }) {
             return <People />;
         case "person":
             return <PersonDetail id={view.id} name={view.name} />;
+        case "places":
+            return <Places />;
         case "place":
-            // Phase 4 ships the real Place screen — for now show a
-            // friendly placeholder so chips that point here don't break.
-            return <PlacePlaceholder name={view.name} />;
+            return <PlaceDetail placeId={view.placeId} name={view.name} />;
         case "duplicates":
             return <Duplicates />;
         case "peers":
@@ -236,24 +238,6 @@ function ViewHost({ view }: { view: View }) {
             // routes a peer to settings), fall back to Peers for now.
             return <Peers />;
     }
-}
-
-function PlacePlaceholder({ name }: { name: string }) {
-    return (
-        <div style={{ padding: "var(--space-8) var(--space-6)" }}>
-            <h1 style={{ font: "var(--font-display)", margin: 0 }}>{name}</h1>
-            <p
-                style={{
-                    color: "var(--color-text-secondary)",
-                    marginTop: "var(--space-3)",
-                }}
-            >
-                Place screen lands in Phase 4. Backend command{" "}
-                <code className="kp-mono">list_places</code> + cross-link
-                chips will populate this view.
-            </p>
-        </div>
-    );
 }
 
 // Walk the backstack and produce breadcrumb items. Each frame except
@@ -303,6 +287,8 @@ function labelForView(v: View): string {
             return "People";
         case "person":
             return v.name ?? "Person";
+        case "places":
+            return "Places";
         case "place":
             return v.name;
         case "duplicates":

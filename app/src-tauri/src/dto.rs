@@ -399,6 +399,34 @@ pub struct ShareRecipientView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/bindings/")]
+/// Phase 4 D2 follow-up: a place where the library has photos,
+/// produced by reverse-geocoding every GPS-tagged asset and grouping
+/// by `{country, city}`. Powers the new "Places" surfaces (For-You
+/// carousel, Albums sub-section, EntityChip drill-in, universal search).
+pub struct PlaceView {
+    /// Stable id `"{country}:{city}"` — used as the routing key for
+    /// the Place screen. Identical to `format!("{}:{}", country, city)`
+    /// so callers can reconstruct it without round-tripping the API.
+    pub place_id: String,
+    pub city: String,
+    pub region: String,
+    pub country: String,
+    /// Total photos at this place across the user's library.
+    #[ts(type = "number")]
+    pub asset_count: u32,
+    /// Up to 6 asset ids to populate hero strips and place cards. Drawn
+    /// across the time range so the cover doesn't degenerate to one day.
+    #[ts(type = "Array<number>")]
+    pub sample_asset_ids: Vec<i64>,
+    /// Centroid of the photos at this place — used to position map
+    /// markers and for distance-based filtering. Plain coords, not
+    /// encrypted, since the place itself is already plaintext.
+    pub centroid_lat: f64,
+    pub centroid_lon: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 pub struct IncomingShareView {
     #[ts(type = "number")]
     pub collection_id: i64,

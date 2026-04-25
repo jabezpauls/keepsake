@@ -265,6 +265,16 @@ export const api = {
             "memories_person_year",
             { minAssets: minAssets ?? null },
         ),
+    /**
+     * Phase 4 — group every GPS-tagged asset by reverse-geocoded
+     * `{country, city}`. Optional day-range filter narrows the scan.
+     * Returns places sorted by `asset_count desc`.
+     */
+    listPlaces: (afterDay?: number, beforeDay?: number) =>
+        invoke<import("./bindings/PlaceView").PlaceView[]>("list_places", {
+            afterDay: afterDay ?? null,
+            beforeDay: beforeDay ?? null,
+        }),
 
     // --- smart albums (D4) ---------------------------------------------
     createSmartAlbum: (name: string, rule: SmartRuleView) =>

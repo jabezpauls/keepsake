@@ -132,6 +132,15 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
         queryFn: () => api.listAlbums(hiddenUnlocked),
     });
 
+    // Phase 4 — resolve the asset's GPS coords to a known city via the
+    // shared `list_places` query. The map call is cached by react-query
+    // so this is essentially free across all asset detail mounts.
+    const { data: places = [] } = useQuery<import("../../bindings/PlaceView").PlaceView[]>({
+        queryKey: ["places"],
+        queryFn: () => api.listPlaces(),
+        staleTime: 5 * 60_000,
+    });
+
     const thumbQuery = useQuery({
         queryKey: ["asset-thumb-1024", id],
         queryFn: () => api.assetThumbnail(id, 1024),
@@ -219,10 +228,30 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
         });
     }, [detail?.taken_at_utc]);
 
+    // Reverse-resolve the photo's GPS to its closest known city. Same
+    // ~50 km threshold as the geocoder uses for the trip-naming pass —
+    // beyond that we still show the coords so the user can click into
+    // the map view, but not as a "place".
+    const nearestPlace = useMemo(() => {
+        if (!detail?.gps || places.length === 0) return null;
+        let best: { place: typeof places[number]; dist: number } | null = null;
+        for (const p of places) {
+            const dlat = (p.centroid_lat - detail.gps.lat) * 111;
+            const dlon =
+                (p.centroid_lon - detail.gps.lon) *
+                111 *
+                Math.cos((detail.gps.lat * Math.PI) / 180);
+            const dist = Math.sqrt(dlat * dlat + dlon * dlon);
+            if (!best || dist < best.dist) best = { place: p, dist };
+        }
+        return best && best.dist < 80 ? best.place : null;
+    }, [detail?.gps, places]);
+
     const placeChip = useMemo(() => {
         if (!detail?.gps) return null;
+        if (nearestPlace) return `${nearestPlace.city}, ${nearestPlace.country}`;
         return `${detail.gps.lat.toFixed(2)}, ${detail.gps.lon.toFixed(2)}`;
-    }, [detail?.gps]);
+    }, [detail?.gps, nearestPlace]);
 
     const addToAlbum = async (albumId: number) => {
         await api.addToAlbum(albumId, [id]);
@@ -385,10 +414,27 @@ export default function AssetDetail({ id, back, neighbors, index }: Props) {
                         <EntityChip
                             entity={{
                                 kind: "place",
-                                placeId: `gps:${detail.gps?.lat.toFixed(4)}:${detail.gps?.lon.toFixed(4)}`,
+                                placeId:
+                                    nearestPlace?.place_id ??
+                                    `gps:${detail.gps?.lat.toFixed(4)}:${detail.gps?.lon.toFixed(4)}`,
                                 name: placeChip,
                             }}
-                            onClick={() => setView({ kind: "map" })}
+                            onClick={() => {
+                                // If we know the city, drill into the
+                                // place view; otherwise fall back to the
+                                // map (so the user can find the spot
+                                // visually even when it's not in our
+                                // ~80-cities dataset).
+                                if (nearestPlace) {
+                                    setView({
+                                        kind: "place",
+                                        placeId: nearestPlace.place_id,
+                                        name: `${nearestPlace.city}, ${nearestPlace.country}`,
+                                    });
+                                } else {
+                                    setView({ kind: "map" });
+                                }
+                            }}
                         />
                     )}
                     {detail.device && (

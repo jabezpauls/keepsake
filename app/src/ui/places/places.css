@@ -1,0 +1,196 @@
+/*
+ * Phase 4 Places styles. Mirrors the Library's spacing rhythm but
+ * leans on Card primitives for the grid items.
+ */
+
+.kp-places {
+    padding: var(--space-5) var(--space-5) var(--space-8);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    height: 100%;
+    overflow-y: auto;
+}
+
+.kp-places-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.kp-places-title {
+    font: var(--font-display);
+    margin: 0;
+}
+
+.kp-places-subtitle {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    margin: 0;
+}
+
+.kp-places-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--space-4);
+}
+
+.kp-place-card-cover {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--color-surface-2);
+}
+
+.kp-place-card-cover > .thumb,
+.kp-place-card-cover > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-place-card-cover-empty {
+    width: 100%;
+    height: 100%;
+    background: var(--color-surface-3);
+}
+
+.kp-place-card-body {
+    padding: var(--space-3);
+}
+
+.kp-place-card-title {
+    font: var(--font-title-2);
+    margin: 0 0 2px 0;
+}
+
+.kp-place-card-subtitle {
+    font: var(--font-caption);
+    color: var(--color-text-secondary);
+    margin: 0;
+}
+
+.kp-place-card-count {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    margin: var(--space-2) 0 0 0;
+}
+
+.kp-places-back {
+    align-self: flex-start;
+    background: transparent;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font: var(--font-body);
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer;
+}
+
+.kp-places-back:hover {
+    border-color: var(--color-border-strong);
+    color: var(--color-text-primary);
+}
+
+/* ------------------------------------------------------------------------ */
+/* PlaceDetail                                                               */
+/* ------------------------------------------------------------------------ */
+
+.kp-place-detail {
+    padding: var(--space-5) var(--space-5) var(--space-8);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    height: 100%;
+    overflow-y: auto;
+}
+
+.kp-place-detail-hero {
+    display: flex;
+    gap: var(--space-5);
+    align-items: stretch;
+}
+
+.kp-place-detail-cover {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    width: 60%;
+    max-width: 720px;
+    aspect-ratio: 16 / 7;
+}
+
+.kp-place-detail-cover-cell {
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--color-surface-2);
+}
+
+.kp-place-detail-cover-cell > .thumb,
+.kp-place-detail-cover-cell > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-place-detail-meta {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.kp-place-detail-title {
+    font: var(--font-display);
+    margin: 0;
+}
+
+.kp-place-detail-subtitle {
+    font: var(--font-title-2);
+    color: var(--color-text-secondary);
+    margin: 0;
+}
+
+.kp-place-detail-count {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    margin: 0;
+}
+
+.kp-place-detail-chips {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-top: var(--space-2);
+}
+
+.kp-place-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 4px;
+}
+
+.kp-place-detail-cell {
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--color-surface-2);
+    border: 0;
+    cursor: pointer;
+    padding: 0;
+}
+
+.kp-place-detail-cell > .thumb,
+.kp-place-detail-cell > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-place-detail-cell:hover {
+    outline: 2px solid var(--color-accent-300);
+    outline-offset: 2px;
+}

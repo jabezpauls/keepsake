@@ -52,6 +52,7 @@ export type View =
     | { kind: "map" }
     | { kind: "people" }
     | { kind: "person"; id: number; name: string | null }
+    | { kind: "places" }
     | { kind: "place"; placeId: string; name: string }
     | { kind: "duplicates" }
     | { kind: "peers" }

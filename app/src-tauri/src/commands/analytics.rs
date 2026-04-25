@@ -16,8 +16,8 @@ use mv_core::geocode::Geocoder;
 use tauri::State;
 
 use crate::dto::{
-    MemoryGroupView, PersonYearMemoryView, SmartAlbumView, SmartRuleView, TimelineCursor,
-    TimelineEntryView, TimelinePage, TripView, YearInPhotosView,
+    MemoryGroupView, PersonYearMemoryView, PlaceView, SmartAlbumView, SmartRuleView,
+    TimelineCursor, TimelineEntryView, TimelinePage, TripView, YearInPhotosView,
 };
 use crate::errors::{wire, AppError, AppResult};
 use crate::state::AppState;
@@ -484,6 +484,133 @@ fn to_view(r: SmartRule) -> SmartRuleView {
         after_day: r.after_day,
         before_day: r.before_day,
     }
+}
+
+#[tauri::command]
+pub async fn list_places(
+    state: State<'_, AppState>,
+    after_day: Option<i64>,
+    before_day: Option<i64>,
+) -> Result<Vec<PlaceView>, String> {
+    wire(list_places_impl(&state, after_day, before_day).await)
+}
+
+/// Reverse-geocode every GPS-tagged asset in the user's library and
+/// group by `{country, city}`. The encrypted GPS column is decrypted in
+/// the same way as trip detection (`detect_trips_run`), then the in-
+/// memory `Geocoder` (~80 cities) names each point. Output is sorted
+/// by `asset_count desc` so callers can paginate top places trivially.
+async fn list_places_impl(
+    state: &AppState,
+    after_day: Option<i64>,
+    before_day: Option<i64>,
+) -> AppResult<Vec<PlaceView>> {
+    let (db_handle, user_id, ck) = {
+        let guard = state.inner.lock().await;
+        let s = guard.session.as_ref().ok_or(AppError::Locked)?;
+        (
+            s.db.clone(),
+            s.user.user_id,
+            s.default_collection_key.clone(),
+        )
+    };
+
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<PlaceView>> {
+        let guard = db_handle.blocking_lock();
+        let rows = q::list_geo_tagged_assets_for_user(&guard, user_id)?;
+        let ck: Arc<CollectionKey> = ck;
+        let geocoder = Geocoder::new();
+
+        // Bucket: place_id -> (PlaceView accumulator).
+        struct Bucket {
+            city: String,
+            region: String,
+            country: String,
+            asset_ids: Vec<i64>,
+            sum_lat: f64,
+            sum_lon: f64,
+        }
+        let mut buckets: std::collections::HashMap<String, Bucket> =
+            std::collections::HashMap::new();
+
+        for (asset_id, gps_ct, day) in rows {
+            // Apply optional day filter — cheap pre-filter before the
+            // expensive AEAD open. The query already excludes NULL day,
+            // so `day` is always a real number here.
+            if let Some(after) = after_day {
+                if day < after {
+                    continue;
+                }
+            }
+            if let Some(before) = before_day {
+                if day > before {
+                    continue;
+                }
+            }
+            let Ok(plain) = open_row(&gps_ct, 0, ck.as_bytes()) else {
+                continue;
+            };
+            let Ok(v): serde_json::Result<serde_json::Value> = serde_json::from_slice(&plain)
+            else {
+                continue;
+            };
+            let (Some(lat), Some(lon)) = (
+                v.get("lat").and_then(|x| x.as_f64()),
+                v.get("lon").and_then(|x| x.as_f64()),
+            ) else {
+                continue;
+            };
+            let Some(named) = geocoder.reverse(lat, lon) else {
+                // Skip points outside the bundled-cities dataset rather
+                // than fabricating a name. The user can still see them
+                // on the Map.
+                continue;
+            };
+            let place_id = format!("{}:{}", named.country, named.city);
+            let bucket = buckets.entry(place_id).or_insert_with(|| Bucket {
+                city: named.city.clone(),
+                region: named.region.clone(),
+                country: named.country.clone(),
+                asset_ids: Vec::new(),
+                sum_lat: 0.0,
+                sum_lon: 0.0,
+            });
+            bucket.asset_ids.push(asset_id);
+            bucket.sum_lat += lat;
+            bucket.sum_lon += lon;
+        }
+
+        let mut out: Vec<PlaceView> = buckets
+            .into_iter()
+            .map(|(place_id, b)| {
+                let n = b.asset_ids.len() as f64;
+                // Sample ids spread across the asset list so the cover
+                // strip doesn't degenerate to one capture session.
+                let stride = (b.asset_ids.len().max(6) / 6).max(1);
+                let sample: Vec<i64> = b
+                    .asset_ids
+                    .iter()
+                    .step_by(stride)
+                    .take(6)
+                    .copied()
+                    .collect();
+                PlaceView {
+                    place_id,
+                    city: b.city,
+                    region: b.region,
+                    country: b.country,
+                    asset_count: b.asset_ids.len() as u32,
+                    sample_asset_ids: sample,
+                    centroid_lat: b.sum_lat / n,
+                    centroid_lon: b.sum_lon / n,
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| b.asset_count.cmp(&a.asset_count));
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)?
 }
 
 /// Render a `days-since-epoch` pair as "Jan 3 → Jan 10, 2024". Falls
