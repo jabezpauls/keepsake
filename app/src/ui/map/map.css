@@ -1,0 +1,144 @@
+/*
+ * Phase 9 polish for the Map view. Token-based colours so it matches
+ * the rest of the redesigned shell. Map background + grid colours are
+ * declared as their own tokens so light/dark themes can swap without
+ * the canvas going neon.
+ */
+
+:root {
+    --map-bg: #0a0e14;
+    --map-grid: #1c2535;
+    --map-grid-strong: #2a3548;
+}
+
+:root[data-theme="light"],
+:root:not([data-theme]) {
+    --map-bg: #eef2f7;
+    --map-grid: #d6dde7;
+    --map-grid-strong: #b8c2d0;
+}
+
+:root[data-theme="dark"] {
+    --map-bg: #0a0e14;
+    --map-grid: #1c2535;
+    --map-grid-strong: #2a3548;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --map-bg: #0a0e14;
+        --map-grid: #1c2535;
+        --map-grid-strong: #2a3548;
+    }
+}
+
+.kp-map {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    background: var(--color-canvas);
+}
+
+.kp-map-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-5);
+    flex-shrink: 0;
+}
+
+.kp-map-toolbar h1 {
+    font: var(--font-display);
+    margin: 0;
+}
+
+.kp-map-toolbar p {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    margin: 2px 0 0 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.kp-map-controls {
+    display: flex;
+    gap: var(--space-1);
+    align-items: center;
+}
+
+.kp-map-canvas {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    background: var(--map-bg);
+    display: block;
+    user-select: none;
+    touch-action: none;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Bottom sheet (cluster contents)                                           */
+/* ------------------------------------------------------------------------ */
+
+.kp-map-sheet {
+    position: fixed;
+    left: 232px; /* sidebar width */
+    right: 0;
+    bottom: 0;
+    max-height: 50vh;
+    background: var(--color-surface-1);
+    border-top: 1px solid var(--color-border-subtle);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    z-index: var(--z-popover);
+    animation: kp-sheet-in-bottom var(--duration-base) var(--ease-spring);
+}
+
+.kp-map-sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.kp-map-sheet-grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-3) var(--space-5);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 4px;
+}
+
+.kp-map-sheet-cell {
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--color-surface-2);
+    border: 0;
+    cursor: pointer;
+    padding: 0;
+}
+
+.kp-map-sheet-cell > .thumb,
+.kp-map-sheet-cell > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-map-sheet-cell:hover {
+    outline: 2px solid var(--color-accent-300);
+    outline-offset: 2px;
+}
+
+.kp-map-sheet-overflow {
+    grid-column: 1 / -1;
+    color: var(--color-text-tertiary);
+    font: var(--font-caption);
+    text-align: center;
+    margin: var(--space-2) 0;
+}
