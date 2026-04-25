@@ -103,24 +103,26 @@ export default function MapView() {
         return mergeOverlapping(raw, viewport.zoom);
     }, [points, viewport.zoom]);
 
-    // Wheel zoom — anchored on cursor so the point under the mouse stays
-    // visually fixed.
-    useEffect(() => {
-        const el = svgRef.current;
+    // Wheel zoom + mouse-drag pan. The SVG only mounts after the data
+    // query resolves (loading/empty states render placeholder divs), so
+    // we re-attach handlers any time the rendered SVG identity changes —
+    // a callback ref does this cleanly without a fragile effect dep.
+    const setSvgRef = useCallback((el: SVGSVGElement | null) => {
+        // Detach any previous handlers when the ref changes.
+        if (svgRef.current && (svgRef.current as SVGSVGElement & {
+            __mvCleanup?: () => void;
+        }).__mvCleanup) {
+            (svgRef.current as SVGSVGElement & { __mvCleanup?: () => void })
+                .__mvCleanup!();
+        }
+        svgRef.current = el;
         if (!el) return;
+
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
             const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
             setViewport((v) => zoomAt(v, el, e.clientX, e.clientY, factor));
         };
-        el.addEventListener("wheel", onWheel, { passive: false });
-        return () => el.removeEventListener("wheel", onWheel);
-    }, []);
-
-    // Mouse-drag pan.
-    useEffect(() => {
-        const el = svgRef.current;
-        if (!el) return;
         let dragging = false;
         let lastX = 0;
         let lastY = 0;
@@ -145,13 +147,18 @@ export default function MapView() {
             }));
         };
         const onUp = () => {
+            if (!dragging) return;
             dragging = false;
             el.style.cursor = "grab";
         };
+
+        el.addEventListener("wheel", onWheel, { passive: false });
         el.addEventListener("mousedown", onDown);
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
-        return () => {
+
+        (el as SVGSVGElement & { __mvCleanup?: () => void }).__mvCleanup = () => {
+            el.removeEventListener("wheel", onWheel);
             el.removeEventListener("mousedown", onDown);
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onUp);
@@ -261,7 +268,7 @@ export default function MapView() {
                 </div>
             </header>
             <svg
-                ref={svgRef}
+                ref={setSvgRef}
                 className="kp-map-canvas"
                 viewBox={viewBox}
                 preserveAspectRatio="xMidYMid meet"
