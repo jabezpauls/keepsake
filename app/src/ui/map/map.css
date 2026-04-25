@@ -73,6 +73,23 @@
     display: flex;
     gap: var(--space-1);
     align-items: center;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    padding: 4px;
+}
+
+.kp-map-controls .kp-icon-button:hover {
+    background: var(--color-surface-3);
+}
+
+.kp-map-controls .kp-button {
+    background: transparent;
+    border: 0;
+}
+
+.kp-map-controls .kp-button:hover {
+    background: var(--color-surface-3);
 }
 
 .kp-map-canvas {

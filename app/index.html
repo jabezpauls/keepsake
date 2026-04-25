@@ -50,10 +50,27 @@
                         { id: 3, name: null, face_count: 42, hidden: false, cover_asset_id: 103 },
                     ],
                     nearDupClusters: [],
-                    mapPoints: [
-                        { asset_id: 101, lat: 35.6762, lon: 139.6503, taken_at_utc_day: 20010 },
-                        { asset_id: 105, lat: 48.8566, lon: 2.3522, taken_at_utc_day: 20008 },
-                    ],
+                    mapPoints: (function () {
+                        // Synthesize a regional cluster (~Bangalore) so the
+                        // auto-fit ↔ cluster-radius interaction can be tested
+                        // realistically — most users have one dominant region.
+                        var pts = [];
+                        for (var i = 0; i < 600; i++) {
+                            pts.push({
+                                asset_id: 1000 + i,
+                                lat: 12.97 + (Math.random() - 0.5) * 4,
+                                lon: 77.59 + (Math.random() - 0.5) * 4,
+                                taken_at_utc_day: 20000 + i,
+                            });
+                        }
+                        // Plus a handful of distant outliers so panning
+                        // across the antimeridian can be checked.
+                        pts.push({ asset_id: 101, lat: 35.6762, lon: 139.6503, taken_at_utc_day: 20010 });
+                        pts.push({ asset_id: 105, lat: 48.8566, lon: 2.3522, taken_at_utc_day: 20008 });
+                        pts.push({ asset_id: 109, lat: 40.7128, lon: -74.0060, taken_at_utc_day: 19980 });
+                        pts.push({ asset_id: 111, lat: -33.8688, lon: 151.2093, taken_at_utc_day: 19965 });
+                        return pts;
+                    })(),
                     peers: [],
                     trips: [
                         { id: 100, name: "Tokyo, Japan · Sep 14 → Sep 21, 2024", member_count: 412, created_at: 1727000000 },

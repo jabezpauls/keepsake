@@ -168,6 +168,12 @@ select.kp-input:focus-visible {
     height: 40px;
 }
 
+/* Lucide SVGs come with width/height HTML attrs, but in flex layouts
+ * those are ignored — explicit CSS keeps them from collapsing to 0. */
+.kp-icon-button > svg {
+    flex-shrink: 0;
+}
+
 .kp-icon-button:hover:not(:disabled) {
     background: var(--color-surface-2);
     color: var(--color-text-primary);

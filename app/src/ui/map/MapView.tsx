@@ -454,7 +454,10 @@ function fitToPoints(points: MapPoint[]): Viewport {
     // Both axes are 2 px/° at zoom 1; the binding span dictates the zoom.
     const zoomLat = (180 * 0.8) / spanLat;
     const zoomLon = (360 * 0.8) / spanLon;
-    const zoom = clampZoom(Math.min(zoomLat, zoomLon));
+    // Cap auto-fit zoom at 8× — beyond that the user can't visually parse
+    // a full region, and clusters will overlap the controls. Manual `+`
+    // pushes past this if they want to dial in further.
+    const zoom = clampZoom(Math.min(zoomLat, zoomLon, 8));
     return {
         cx: (cLon / 360) * W,
         cy: -(cLat / 180) * H,
@@ -488,12 +491,16 @@ function zoomAt(
     };
 }
 
-// Cluster radius (projection units, before SVG zoom). Small at low photo
-// counts, scales sub-linearly so a 1000-photo cluster doesn't dwarf a
-// 5-photo one.
+// Cluster radius — kept ~constant in *screen pixels* regardless of how
+// far the user has zoomed in. We compute the desired pixel radius from
+// the photo count, then divide by the zoom factor to convert into the
+// SVG's projection units (which shrink as we zoom). Without this scaling
+// the bubble appears tiny at world view (zoom=1) and fills the canvas
+// at zoom=30 (auto-fit on a regional library).
 function clusterRadius(count: number, zoom: number): number {
-    const base = 4 + Math.log10(count + 1) * 4;
-    return base / Math.sqrt(zoom);
+    // Base radius in screen px: 16 px for 1 photo, ~40 px for 1000.
+    const screenPx = 14 + Math.log10(count + 1) * 6;
+    return screenPx / zoom;
 }
 
 // Two clusters merge when their centroids are closer than the sum of
