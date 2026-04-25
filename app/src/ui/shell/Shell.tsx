@@ -16,6 +16,7 @@ import AlbumDetail from "../albums/AlbumDetail";
 import AssetDetail from "../library/AssetDetail";
 import SearchHub from "../search/SearchHub";
 import MapView from "../map/MapView";
+import MapLibreMap from "../map/MapLibreMap";
 import People from "../people/People";
 import PersonDetail from "../people/PersonDetail";
 import Duplicates from "../duplicates/Duplicates";
@@ -208,6 +209,15 @@ function ViewHost({ view }: { view: View }) {
         case "search":
             return <SearchHub />;
         case "map":
+            // `?newmap=1` opts in to the MapLibre-backed real-tile map
+            // while it's being built up across the migration steps.
+            // Default stays the legacy SVG MapView until step 4 cutover.
+            if (
+                typeof window !== "undefined" &&
+                new URLSearchParams(window.location.search).get("newmap") === "1"
+            ) {
+                return <MapLibreMap />;
+            }
             return <MapView />;
         case "people":
             return <People />;
