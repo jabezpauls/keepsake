@@ -26,6 +26,7 @@ export default defineConfig(async () => ({
     test: {
         environment: "jsdom",
         globals: true,
+        setupFiles: ["./vitest.setup.ts"],
         // Playwright e2e tests live under tests/e2e and are driven by the
         // Playwright runner, not vitest.
         exclude: ["node_modules", "dist", "tests/e2e/**"],
