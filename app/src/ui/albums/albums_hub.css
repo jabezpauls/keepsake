@@ -1,0 +1,232 @@
+/*
+ * Phase 6 AlbumsHub styles. Consolidates albums + smart albums + people
+ * + places + trips + media types + utilities into one Apple-Photos-
+ * style hub page.
+ */
+
+.kp-albums-hub {
+    padding: var(--space-5) var(--space-5) var(--space-9);
+    height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.kp-albums-hub-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-2);
+}
+
+.kp-albums-hub-header h1 {
+    font: var(--font-display);
+    margin: 0;
+}
+
+.kp-albums-hub-create {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    padding: var(--space-3);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+}
+
+.kp-albums-hub-create input {
+    flex: 1;
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    color: var(--color-text-primary);
+    font: var(--font-body);
+}
+
+.kp-albums-hub-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.kp-albums-hub-section header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.kp-albums-hub-section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.kp-albums-hub-section-title h2 {
+    font: var(--font-title-1);
+    margin: 0;
+}
+
+.kp-albums-hub-section-title svg {
+    color: var(--color-text-tertiary);
+}
+
+.kp-albums-hub-section-count {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-full);
+    padding: 0 var(--space-2);
+    line-height: 18px;
+}
+
+.kp-albums-hub-section-actions {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+.kp-albums-hub-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--space-3);
+}
+
+.kp-albums-hub-card-content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.kp-albums-hub-card-content strong {
+    font: var(--font-body);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.kp-albums-hub-album {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    justify-content: space-between;
+}
+
+.kp-albums-hub-album-content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: 1;
+}
+
+.kp-albums-hub-album-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+}
+
+.kp-albums-hub-album-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.kp-albums-hub-album-meta strong {
+    font: var(--font-body);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kp-albums-hub-album-meta span {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+}
+
+.kp-albums-hub-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.kp-albums-hub-people {
+    display: flex;
+    gap: var(--space-3);
+    overflow-x: auto;
+    padding-bottom: var(--space-2);
+    scrollbar-width: thin;
+}
+
+.kp-albums-hub-person {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    width: 88px;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    font: var(--font-caption);
+    text-align: center;
+}
+
+.kp-albums-hub-person:hover {
+    color: var(--color-text-primary);
+}
+
+.kp-albums-hub-person span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+}
+
+.kp-albums-hub-places {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--space-3);
+}
+
+.kp-albums-hub-place-cover {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--color-surface-2);
+}
+
+.kp-albums-hub-place-cover > .thumb,
+.kp-albums-hub-place-cover > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-albums-hub-place-meta {
+    padding: var(--space-2) var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.kp-albums-hub-place-meta strong {
+    font: var(--font-body);
+    font-weight: 600;
+}
+
+.kp-albums-hub-place-meta span {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+}

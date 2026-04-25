@@ -11,7 +11,7 @@ import { CommandPalette } from "../cmdk/CommandPalette";
 import LibraryRouter from "../library/LibraryRouter";
 import ForYou from "../for_you/ForYou";
 import Sources from "../sources/Sources";
-import Albums from "../albums/Albums";
+import AlbumsHub from "../albums/AlbumsHub";
 import AlbumDetail from "../albums/AlbumDetail";
 import AssetDetail from "../library/AssetDetail";
 import Search from "../search/Search";
@@ -193,7 +193,7 @@ function ViewHost({ view }: { view: View }) {
         case "sources":
             return <Sources />;
         case "albums":
-            return <Albums />;
+            return <AlbumsHub />;
         case "album":
             return <AlbumDetail id={view.id} name={view.name} />;
         case "asset":
