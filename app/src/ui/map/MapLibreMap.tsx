@@ -27,61 +27,52 @@ import "./map.css";
 // Mounted from `Shell.tsx` only when `?newmap=1`. Step 4 of the
 // migration cuts over the default and removes the legacy implementation.
 
-// Style URLs are served by the Tauri custom protocol in
-// `commands/map_tiles.rs` — the webview never opens a direct HTTPS
-// connection to the upstream tile CDN. Outside Tauri (e.g. browser
-// dev mode) we fall back to direct fetches; the protocol handler
-// only exists in the desktop runtime.
-const IS_TAURI = typeof window !== "undefined" &&
-    "__TAURI_INTERNALS__" in window &&
-    !(window as { __MV_MOCK_IPC__?: unknown }).__MV_MOCK_IPC__;
+// Raster basemap from CARTO (OSM-derived, OSM ODbL licence + CARTO
+// attribution required, no API key, no per-user tracking). We picked
+// raster over OpenFreeMap's vector tiles because the latter crashed
+// the webkit2gtk renderer process on Linux when fed through any of
+// our render paths — direct or proxied. Raster PNG is rock-solid in
+// the WebKit GPU pipeline (it's just `<img>` painting under the
+// hood), at the cost of:
+//   - labels don't rotate with map heading (we don't rotate anyway)
+//   - tiles look fuzzy at non-integer zoom (mitigated by 2x retina
+//     subdomain `_2x` we'd add if device-pixel-ratio > 1)
+//   - less typographic polish than vector
+//
+// The trade is right for an offline-first photo library: stability +
+// simple ToS over fancy rendering. Subdomains a/b/c/d round-robin so
+// we don't hammer one CDN edge.
+const CARTO_LIGHT_TILES = [
+    "https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
+    "https://cartodb-basemaps-b.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
+    "https://cartodb-basemaps-c.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
+    "https://cartodb-basemaps-d.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
+];
+const CARTO_DARK_TILES = [
+    "https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png",
+    "https://cartodb-basemaps-b.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png",
+    "https://cartodb-basemaps-c.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png",
+    "https://cartodb-basemaps-d.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png",
+];
+const ATTRIBUTION =
+    '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>';
 
-const STYLE_LIGHT = IS_TAURI
-    ? "mvtile://openfreemap/styles/liberty"
-    : "https://tiles.openfreemap.org/styles/liberty";
-const STYLE_DARK = IS_TAURI
-    ? "mvtile://openfreemap/styles/dark"
-    : "https://tiles.openfreemap.org/styles/dark";
-
-// MapLibre fetches every resource (styles, vector tiles, glyphs,
-// sprites, satellite raster) — `transformRequest` rewrites each
-// upstream URL to its `mvtile://` equivalent so the Tauri proxy
-// handles it. Browser dev mode (no Tauri) skips the rewrite and lets
-// the webview hit upstream directly, since the custom protocol only
-// exists in the desktop runtime.
-type TransformResult = { url: string } | undefined;
-const transformRequest = (url: string): TransformResult => {
-    if (!IS_TAURI) return { url };
-    if (url.startsWith("mvtile://")) return { url };
-    if (url.startsWith("https://tiles.openfreemap.org/styles/")) {
-        const name = url.slice("https://tiles.openfreemap.org/styles/".length);
-        return { url: `mvtile://openfreemap/styles/${name}` };
-    }
-    if (url.startsWith("https://tiles.openfreemap.org/planet/")) {
-        const suffix = url.slice("https://tiles.openfreemap.org/planet/".length);
-        return { url: `mvtile://openfreemap/tiles/${suffix}` };
-    }
-    if (url.startsWith("https://tiles.openfreemap.org/fonts/")) {
-        const suffix = url.slice("https://tiles.openfreemap.org/fonts/".length);
-        return { url: `mvtile://openfreemap-fonts/${suffix}` };
-    }
-    if (url.startsWith("https://tiles.openfreemap.org/sprites/ofm_f384/")) {
-        const suffix = url.slice(
-            "https://tiles.openfreemap.org/sprites/ofm_f384/".length,
-        );
-        return { url: `mvtile://openfreemap-sprite/${suffix}` };
-    }
-    // Esri satellite — not enabled by default yet, but the rewrite
-    // lands so a settings toggle in a follow-up commit can switch
-    // styles without round-tripping through this file.
-    const ESRI_PREFIX =
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/";
-    if (url.startsWith(ESRI_PREFIX)) {
-        const suffix = url.slice(ESRI_PREFIX.length);
-        return { url: `mvtile://esri/${suffix}` };
-    }
-    return { url };
-};
+// Inline raster style (no separate JSON style document fetch). One
+// source, one layer — the simplest WebGL pipeline MapLibre supports.
+function rasterStyle(tiles: string[]): import("maplibre-gl").StyleSpecification {
+    return {
+        version: 8,
+        sources: {
+            carto: {
+                type: "raster",
+                tiles,
+                tileSize: 256,
+                attribution: ATTRIBUTION,
+            },
+        },
+        layers: [{ id: "carto", type: "raster", source: "carto" }],
+    };
+}
 
 // Cluster aggregation tuning. clusterRadius is in screen pixels —
 // 50 px matches the visual size of our marker so clusters of clusters
@@ -207,21 +198,11 @@ export default function MapLibreMap() {
             const clusterId = feature.properties?.cluster_id as number;
             const src = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
             if (!src || clusterId == null) return;
-            const currentZoom = map.getZoom();
-            // Below clusterMaxZoom: zoom into the cluster so it splits.
-            // At/above: open the sheet listing every photo in it.
-            if (currentZoom < CLUSTER_MAX_ZOOM) {
-                src.getClusterExpansionZoom(clusterId).then((nextZoom) => {
-                    const geom = feature.geometry as GeoJSON.Point;
-                    map.easeTo({
-                        center: geom.coordinates as [number, number],
-                        zoom: nextZoom,
-                        duration: 400,
-                    });
-                });
-                return;
-            }
-            // Pull the cluster's leaves and open the sheet.
+            // Photo libraries care about "show me what was taken here",
+            // not "let me drill into the geographic split". Every cluster
+            // click opens the sheet directly — easier to scan a thumbnail
+            // grid than to keep zooming until things separate. The user
+            // can still zoom manually with +/− or the wheel.
             src.getClusterLeaves(clusterId, 1000, 0).then((leaves) => {
                 setSelected(
                     leaves.map((leaf) => {
@@ -307,13 +288,14 @@ export default function MapLibreMap() {
                 <MapGL
                     ref={mapRef}
                     initialViewState={{ longitude: 0, latitude: 20, zoom: 1.5 }}
-                    mapStyle={theme === "dark" ? STYLE_DARK : STYLE_LIGHT}
+                    mapStyle={rasterStyle(
+                        theme === "dark" ? CARTO_DARK_TILES : CARTO_LIGHT_TILES,
+                    )}
                     style={{ width: "100%", height: "100%" }}
                     attributionControl={{ compact: true }}
                     interactiveLayerIds={[CLUSTERS_LAYER, POINTS_LAYER]}
                     onClick={onClick}
                     onLoad={() => setMapLoaded(true)}
-                    transformRequest={transformRequest}
                     cursor="grab"
                 >
                     <NavigationControl position="top-right" showCompass={false} />
