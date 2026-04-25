@@ -1,0 +1,399 @@
+/*
+ * Phase 3 Library + AssetDetail styles. Replaces the .timeline-* and
+ * .asset-detail-* selectors in legacy styles.css for the new shell;
+ * legacy ones stay alive for ?legacy=1.
+ */
+
+.kp-library {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--color-canvas);
+}
+
+.kp-library-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-5);
+    flex-shrink: 0;
+}
+
+.kp-library-title {
+    font: var(--font-display);
+    margin: 0;
+}
+
+.kp-library-zoom {
+    display: flex;
+    gap: var(--space-1);
+}
+
+.kp-library-loading {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-tertiary);
+    font: var(--font-body);
+}
+
+.kp-library-scroller {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0 var(--space-5) var(--space-8);
+    contain: strict;
+}
+
+.kp-library-header {
+    display: flex;
+    align-items: flex-end;
+    padding: var(--space-3) 0 var(--space-1);
+    font: var(--font-title-2);
+    color: var(--color-text-primary);
+    background: var(--color-canvas);
+}
+
+.kp-library-row {
+    display: grid;
+}
+
+/* Edge-to-edge mosaic at year zoom — Apple's tightest grid. */
+.kp-library-row[data-zoom="year"] {
+    gap: 0;
+}
+
+.kp-library-cell {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    padding: 0;
+    background: var(--color-surface-2);
+    cursor: pointer;
+    transition: outline-color var(--duration-fast) var(--ease-standard);
+}
+
+.kp-library-row[data-zoom="month"] .kp-library-cell,
+.kp-library-row[data-zoom="day"] .kp-library-cell {
+    border-radius: var(--radius-md);
+}
+
+/* Cursor highlight via outline so it doesn't push neighbours around. */
+.kp-library-cell[data-cursor="true"] {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+    z-index: 1;
+}
+
+.kp-library-cell:hover {
+    outline: 2px solid var(--color-accent-300);
+    outline-offset: 2px;
+    z-index: 1;
+}
+
+.kp-library-cell > .thumb,
+.kp-library-cell > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-library-cell-badges {
+    position: absolute;
+    bottom: var(--space-1);
+    left: var(--space-1);
+    display: flex;
+    gap: 4px;
+    pointer-events: none;
+}
+
+.kp-library-cell-badge {
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(8px);
+    color: white;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 12px;
+    padding: 2px 5px;
+    border-radius: 3px;
+}
+
+.kp-library-cell-badge-raw {
+    background: rgba(200, 120, 0, 0.85);
+}
+
+/* ------------------------------------------------------------------------ */
+/* AssetDetail — full-bleed                                                  */
+/* ------------------------------------------------------------------------ */
+
+.kp-asset {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    color: var(--color-text-on-accent);
+    display: flex;
+    flex-direction: column;
+}
+
+[data-theme="light"] .kp-asset,
+:root:not([data-theme="dark"]) .kp-asset {
+    /* Asset viewer is always dark — photos look better against black
+     * regardless of the rest of the app's theme. Apple Photos does
+     * the same. */
+    color: #fff;
+}
+
+.kp-asset-chrome-top,
+.kp-asset-chrome-bottom {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    pointer-events: none;
+    transition: opacity var(--duration-base) var(--ease-standard);
+}
+
+.kp-asset-chrome-top {
+    top: 0;
+    padding: var(--space-4) var(--space-5);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0.6),
+        transparent
+    );
+}
+
+.kp-asset-chrome-bottom {
+    bottom: 0;
+    padding: var(--space-5) var(--space-5) var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    background: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0.7),
+        transparent
+    );
+}
+
+.kp-asset[data-chrome-hidden="true"] .kp-asset-chrome-top,
+.kp-asset[data-chrome-hidden="true"] .kp-asset-chrome-bottom {
+    opacity: 0;
+}
+
+.kp-asset-chrome-top > *,
+.kp-asset-chrome-bottom > * {
+    pointer-events: auto;
+}
+
+.kp-asset-back {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-full);
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.kp-asset-back:hover {
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.kp-asset-filename {
+    font: var(--font-title-2);
+    color: #fff;
+    flex: 1;
+}
+
+.kp-asset-counter {
+    font: var(--font-caption);
+    color: rgba(255, 255, 255, 0.7);
+    font-variant-numeric: tabular-nums;
+}
+
+.kp-asset-info-button {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-full);
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.kp-asset-info-button[data-active="true"] {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.kp-asset-info-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+/* Override entity-chip colors for the dark photo-viewer chrome. */
+.kp-asset-chrome-bottom .kp-entity-chip {
+    background: rgba(0, 0, 0, 0.55);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    backdrop-filter: blur(8px);
+}
+
+.kp-asset-chrome-bottom .kp-entity-chip:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.kp-asset-chrome-bottom .kp-entity-chip > svg {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.kp-asset-stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.kp-asset-stage img,
+.kp-asset-stage video {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.kp-asset-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-full);
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-size: 24px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    transition:
+        opacity var(--duration-base) var(--ease-standard),
+        transform var(--duration-fast) var(--ease-standard);
+}
+
+.kp-asset-nav-prev { left: var(--space-5); }
+.kp-asset-nav-next { right: var(--space-5); }
+
+.kp-asset-nav:hover {
+    transform: translateY(-50%) scale(1.05);
+}
+
+.kp-asset-nav:active {
+    transform: translateY(-50%) scale(0.96);
+}
+
+.kp-asset-nav:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.kp-asset[data-chrome-hidden="true"] .kp-asset-nav {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Right-side info pane */
+.kp-asset-info-pane {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(360px, 80vw);
+    background: var(--color-surface-1);
+    color: var(--color-text-primary);
+    border-left: 1px solid var(--color-border-subtle);
+    z-index: 3;
+    overflow-y: auto;
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.kp-asset-info-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.kp-asset-info-row > .label {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.kp-asset-info-row > .value {
+    font: var(--font-body);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.kp-asset-info-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+
+.kp-asset-info-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.kp-asset-info-section > h4 {
+    font: var(--font-title-2);
+    margin: 0;
+    color: var(--color-text-primary);
+}
+
+.kp-asset-info-section > textarea {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    color: var(--color-text-primary);
+    font: var(--font-body);
+    padding: var(--space-2) var(--space-3);
+    resize: vertical;
+    min-height: 60px;
+}
+
+.kp-asset-info-album-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}

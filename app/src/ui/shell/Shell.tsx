@@ -13,7 +13,7 @@ import ForYouPlaceholder from "../for_you/ForYouPlaceholder";
 import Sources from "../sources/Sources";
 import Albums from "../albums/Albums";
 import AlbumDetail from "../albums/AlbumDetail";
-import AssetDetail from "../timeline/AssetDetail";
+import AssetDetail from "../library/AssetDetail";
 import Search from "../search/Search";
 import MapView from "../map/MapView";
 import People from "../people/People";

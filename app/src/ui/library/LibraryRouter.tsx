@@ -1,9 +1,9 @@
-import Timeline from "../timeline/Timeline";
+import Library from "./Library";
 
-// Phase 2 stub. The "library" zone currently just renders the legacy
-// Timeline. Phase 3 will replace this with the full Library component
-// (edge-to-edge cells, pinch-zoom, sticky scrubber, selection mode,
-// library map mode toggle).
+// Routes the "library" view to the Phase 3 Library component.
+// (Earlier phases routed here too, with a Timeline placeholder; the
+// router stays in place so future Library-zone modes — Map, etc. —
+// can fork off it.)
 export default function LibraryRouter() {
-    return <Timeline />;
+    return <Library />;
 }
