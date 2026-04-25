@@ -1,0 +1,138 @@
+/*
+ * Phase 8 SettingsSheet — vertical sections inside the right-side
+ * Sheet primitive. Each section has a title + rows or fields.
+ */
+
+.kp-settings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.kp-settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.kp-settings-section h3 {
+    font: var(--font-title-2);
+    margin: 0;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 12px;
+}
+
+.kp-settings-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-subtle);
+}
+
+.kp-settings-field-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.kp-settings-field-label strong {
+    font: var(--font-body);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.kp-settings-field-label span {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+}
+
+.kp-settings-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.kp-settings-row:hover {
+    border-color: var(--color-border-default);
+    background: var(--color-surface-3);
+}
+
+.kp-settings-row-icon {
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+}
+
+.kp-settings-row-meta {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.kp-settings-row-meta strong {
+    font: var(--font-body);
+    font-weight: 600;
+}
+
+.kp-settings-row-meta span {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+}
+
+.kp-settings-row > svg:last-child {
+    color: var(--color-text-tertiary);
+    flex-shrink: 0;
+}
+
+.kp-settings-about {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+}
+
+.kp-segmented {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+}
+
+/* Reduced-motion override — when the user explicitly picks "Reduced"
+ * (data-motion="reduced") we collapse durations to zero just like the
+ * prefers-reduced-motion media query. data-motion="full" forces full
+ * motion even when the OS prefers reduced. */
+:root[data-motion="reduced"] {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+    --duration-shared-layout: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root[data-motion="full"] {
+        --duration-instant: 80ms;
+        --duration-fast: 160ms;
+        --duration-base: 240ms;
+        --duration-slow: 400ms;
+        --duration-shared-layout: 320ms;
+    }
+}

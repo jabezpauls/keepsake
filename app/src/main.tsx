@@ -16,6 +16,12 @@ import "./styles/tokens.css";
 import "./components/primitives.css";
 import "./styles.css";
 
+// Apply the user's persisted theme + motion choices before React
+// hydrates, so the first paint already wears the right colour scheme
+// (no flash of unstyled / wrong-themed content).
+import { bootstrapAppearance } from "./ui/settings/appearance";
+bootstrapAppearance();
+
 const queryClient = new QueryClient();
 
 // Dev-only design-system gallery. Mount with `?gallery=1` to inspect

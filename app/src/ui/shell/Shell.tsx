@@ -4,7 +4,7 @@ import { api } from "../../ipc";
 import type { MlStatus } from "../../bindings/MlStatus";
 import { Breadcrumb, BreadcrumbItem, ToastProvider, TooltipProvider } from "../../components";
 import { Sidebar } from "./Sidebar";
-import { SettingsStub } from "./SettingsStub";
+import { SettingsSheet } from "../settings/SettingsSheet";
 import LegacyShell from "./LegacyShell";
 import { CommandPalette } from "../cmdk/CommandPalette";
 
@@ -157,7 +157,7 @@ function NewShell() {
                         </section>
                     </main>
 
-                    <SettingsStub
+                    <SettingsSheet
                         open={settingsOpen}
                         onOpenChange={setSettingsOpen}
                         onOpenWizard={() => setWizardOpen(true)}
