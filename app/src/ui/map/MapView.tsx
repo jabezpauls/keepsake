@@ -480,11 +480,12 @@ function fitToPoints(points: MapPoint[]): Viewport {
     };
 }
 
-// Beyond ~16× we're not rendering tile detail, so further zoom just
-// scatters cluster bubbles across empty canvas without surfacing more
-// information. Floor stays at 1× (full world).
+// Cluster bucketing keeps subdividing as zoom rises (gridDeg = 12/zoom),
+// so even without tile detail higher zoom is useful: a 600-photo cluster
+// at zoom 8 splits into per-neighborhood markers by ~64×, then individual
+// pin-points by ~128×. Floor stays at 1× (full world).
 function clampZoom(z: number): number {
-    return Math.max(1, Math.min(16, z));
+    return Math.max(1, Math.min(128, z));
 }
 
 // Anchored zoom — the cursor stays put while the world scales around it.
