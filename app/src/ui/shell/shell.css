@@ -1,0 +1,419 @@
+/*
+ * Phase 2 shell layout: persistent left sidebar + content area.
+ *
+ * The sidebar is 232 px expanded, 56 px collapsed. The content area
+ * fills the remainder. Both share the canvas background so there's
+ * no visual seam — the divider is a single 1 px border on the sidebar's
+ * right edge.
+ */
+
+.kp-shell {
+    display: flex;
+    height: 100vh;
+    background: var(--color-canvas);
+    color: var(--color-text-primary);
+    font: var(--font-body);
+}
+
+.kp-shell-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.kp-shell-breadcrumb {
+    padding: var(--space-3) var(--space-5) 0 var(--space-5);
+    flex-shrink: 0;
+}
+
+.kp-shell-view {
+    flex: 1;
+    overflow: auto;
+    padding: 0;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Sidebar                                                                   */
+/* ------------------------------------------------------------------------ */
+
+.kp-sidebar {
+    flex-shrink: 0;
+    width: 232px;
+    border-right: 1px solid var(--color-border-subtle);
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-3) var(--space-2);
+    gap: var(--space-1);
+    overflow: hidden;
+    transition: width var(--duration-base) var(--ease-standard);
+}
+
+.kp-sidebar[data-collapsed="true"] {
+    width: 56px;
+    padding: var(--space-3) var(--space-1);
+}
+
+.kp-sidebar-logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2);
+    color: var(--color-text-primary);
+    font: var(--font-title-2);
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    border-radius: var(--radius-md);
+    position: relative;
+}
+
+.kp-sidebar-logo:hover {
+    background: var(--color-surface-2);
+}
+
+.kp-sidebar[data-collapsed="true"] .kp-sidebar-logo {
+    justify-content: center;
+}
+
+.kp-sidebar-hidden-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--color-warning-500);
+    position: absolute;
+    top: 6px;
+    right: 8px;
+}
+
+.kp-sidebar-divider {
+    height: 1px;
+    background: var(--color-border-subtle);
+    margin: var(--space-2) 0;
+}
+
+.kp-sidebar-zones,
+.kp-sidebar-pinned,
+.kp-sidebar-footer {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.kp-sidebar-section-label {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: var(--space-3) var(--space-2) var(--space-1);
+}
+
+.kp-sidebar-zone,
+.kp-sidebar-pinned-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-2);
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font: var(--font-body);
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    text-align: left;
+    transition:
+        background var(--duration-fast) var(--ease-standard),
+        color var(--duration-fast) var(--ease-standard);
+    position: relative;
+}
+
+.kp-sidebar[data-collapsed="true"] .kp-sidebar-zone,
+.kp-sidebar[data-collapsed="true"] .kp-sidebar-pinned-item {
+    justify-content: center;
+    padding: var(--space-2) 0;
+}
+
+.kp-sidebar-zone:hover,
+.kp-sidebar-pinned-item:hover {
+    background: var(--color-surface-2);
+    color: var(--color-text-primary);
+}
+
+.kp-sidebar-zone[data-active="true"],
+.kp-sidebar-pinned-item[data-active="true"] {
+    background: var(--color-surface-2);
+    color: var(--color-accent-500);
+}
+
+/* 2 px accent rail on the left edge of an active item — matches the
+ * Linear pattern. Hidden when the sidebar is collapsed (would clip). */
+.kp-sidebar-zone[data-active="true"]::before {
+    content: "";
+    position: absolute;
+    left: -8px;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    border-radius: var(--radius-full);
+    background: var(--color-accent-500);
+}
+
+.kp-sidebar[data-collapsed="true"] .kp-sidebar-zone[data-active="true"]::before {
+    display: none;
+}
+
+.kp-sidebar-pinned-item {
+    color: var(--color-text-tertiary);
+    font-size: 13px;
+}
+
+.kp-sidebar-spacer {
+    flex: 1;
+}
+
+.kp-sidebar-footer {
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: var(--space-2);
+    margin-top: var(--space-2);
+}
+
+.kp-sidebar-cmdk-hint {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2);
+    border: 1px dashed var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-tertiary);
+    font: var(--font-caption);
+    cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.kp-sidebar-cmdk-hint:hover {
+    border-color: var(--color-border-default);
+    color: var(--color-text-primary);
+}
+
+.kp-sidebar-cmdk-hint kbd {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-1);
+    font: var(--font-mono);
+    font-size: 11px;
+}
+
+.kp-sidebar-tray {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1);
+}
+
+.kp-sidebar[data-collapsed="true"] .kp-sidebar-tray {
+    flex-direction: column;
+}
+
+.kp-sidebar-tray-spacer {
+    flex: 1;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Status orb                                                                */
+/* ------------------------------------------------------------------------ */
+
+.kp-status-orb {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary);
+    transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.kp-status-orb:hover {
+    background: var(--color-surface-2);
+}
+
+.kp-status-orb::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+}
+
+.kp-status-orb[data-state="off"]::after {
+    background: var(--color-text-disabled);
+}
+
+.kp-status-orb[data-state="missing"]::after {
+    background: var(--color-warning-500);
+    animation: kp-orb-pulse 1.4s ease-in-out infinite;
+}
+
+.kp-status-orb[data-state="idle"]::after {
+    background: var(--color-success-500);
+}
+
+.kp-status-orb[data-state="running"]::after {
+    background: var(--color-success-500);
+    animation: kp-orb-pulse 1.2s ease-in-out infinite;
+}
+
+.kp-status-orb[data-state="failed"]::after {
+    background: var(--color-danger-500);
+}
+
+@keyframes kp-orb-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* ------------------------------------------------------------------------ */
+/* Settings sheet content (Phase 2 stub — full design in Phase 8)            */
+/* ------------------------------------------------------------------------ */
+
+.kp-settings-stub {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.kp-settings-stub-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-subtle);
+    cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.kp-settings-stub-row:hover {
+    border-color: var(--color-border-default);
+}
+
+.kp-settings-stub-row > div:first-child {
+    display: flex;
+    flex-direction: column;
+}
+
+.kp-settings-stub-row strong {
+    font: var(--font-body);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.kp-settings-stub-row small {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Cmd-K palette                                                             */
+/* ------------------------------------------------------------------------ */
+
+.kp-cmdk-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--color-overlay);
+    z-index: var(--z-cmdk);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 12vh;
+    animation: kp-overlay-in var(--duration-fast) var(--ease-decel);
+}
+
+.kp-cmdk-panel {
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: min(560px, calc(100vw - var(--space-8)));
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: kp-popover-in var(--duration-base) var(--ease-decel);
+}
+
+.kp-cmdk-input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--color-text-primary);
+    font: var(--font-title-2);
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--color-border-subtle);
+    outline: none;
+}
+
+.kp-cmdk-input::placeholder {
+    color: var(--color-text-tertiary);
+}
+
+.kp-cmdk-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-2);
+}
+
+.kp-cmdk-empty {
+    padding: var(--space-5);
+    color: var(--color-text-tertiary);
+    text-align: center;
+    font: var(--font-caption);
+}
+
+.kp-cmdk-group-heading {
+    padding: var(--space-2) var(--space-2) var(--space-1);
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.kp-cmdk-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    color: var(--color-text-primary);
+    font: var(--font-body);
+}
+
+.kp-cmdk-item[data-selected="true"] {
+    background: var(--color-surface-2);
+}
+
+.kp-cmdk-item-shortcut {
+    margin-left: auto;
+    font: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-1);
+}

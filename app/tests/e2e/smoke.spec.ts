@@ -173,7 +173,10 @@ test("create user → add source → timeline → album export", async ({ page }
         void mod;
     });
 
-    await page.goto("/");
+    // Phase 2 retains the legacy top-nav behind `?legacy=1` for one
+    // migration phase; this smoke spec exercises the legacy chrome
+    // until Phase 3 rewrites it for the new shell.
+    await page.goto("/?legacy=1");
 
     // Create user flow.
     await page.getByLabel("Username").fill("alice");
