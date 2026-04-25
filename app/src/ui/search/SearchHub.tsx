@@ -383,7 +383,7 @@ function DiscoverySurface({
         <div className="kp-search-hub-discovery">
             {people.length > 0 && (
                 <Section title="People" seeAll={onAllPeople}>
-                    <div className="kp-foryou-people">
+                    <div className="kp-foryou-carousel kp-foryou-people">
                         {people
                             .slice()
                             .sort((a, b) => b.face_count - a.face_count)
@@ -434,7 +434,7 @@ function DiscoverySurface({
             )}
 
             <Section title="Categories">
-                <div className="kp-foryou-thumbs">
+                <div className="kp-row" style={{ flexWrap: "wrap" }}>
                     <Chip onClick={() => onCategoryClick("is_video")}>Videos</Chip>
                     <Chip onClick={() => onCategoryClick("is_raw")}>RAW</Chip>
                     <Chip onClick={() => onCategoryClick("is_screenshot")}>
@@ -446,7 +446,7 @@ function DiscoverySurface({
 
             {recent.length > 0 && (
                 <Section title="Recent imports" seeAll={onAllRecent}>
-                    <div className="kp-foryou-thumbs">
+                    <div className="kp-foryou-carousel kp-foryou-thumbs">
                         {recent.slice(0, 16).map((e, idx) => (
                             <button
                                 key={e.id}
@@ -512,7 +512,7 @@ function SearchResults({
             {totalEntityHits > 0 && (
                 <section className="kp-search-hub-entities">
                     <h2>Top matches</h2>
-                    <div className="kp-foryou-thumbs">
+                    <div className="kp-row" style={{ flexWrap: "wrap" }}>
                         {personHits.map((p) => (
                             <EntityChip
                                 key={`p-${p.id}`}

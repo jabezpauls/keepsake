@@ -46,12 +46,16 @@ function isFallback(props: AvatarProps): props is AvatarFallbackProps {
 //   - personId  → loads the cropped face via PersonFaceThumb
 //   - fallback  → renders 1-2 character initials
 //   - children  → arbitrary content
+//
+// Destructuring strips the discriminator fields (personId / fallback /
+// children) before spreading the rest onto the div, otherwise React
+// warns about unknown DOM attributes like `personid`.
 export const Avatar = forwardRef<HTMLDivElement, AvatarProps>(function Avatar(
     props,
     ref,
 ) {
-    const { size = "md", alt, className, ...rest } = props;
     if (isPerson(props)) {
+        const { size = "md", alt, className, personId, ...rest } = props;
         return (
             <div
                 ref={ref}
@@ -60,7 +64,7 @@ export const Avatar = forwardRef<HTMLDivElement, AvatarProps>(function Avatar(
                 {...rest}
             >
                 <PersonFaceThumb
-                    personId={props.personId}
+                    personId={personId}
                     size={SIZE_PX[size] * 2}
                     alt={alt}
                 />
@@ -68,6 +72,7 @@ export const Avatar = forwardRef<HTMLDivElement, AvatarProps>(function Avatar(
         );
     }
     if (isFallback(props)) {
+        const { size = "md", alt, className, fallback, ...rest } = props;
         return (
             <div
                 ref={ref}
@@ -76,11 +81,12 @@ export const Avatar = forwardRef<HTMLDivElement, AvatarProps>(function Avatar(
                 {...rest}
             >
                 <div className="kp-avatar-fallback" aria-label={alt}>
-                    {props.fallback.slice(0, 2)}
+                    {fallback.slice(0, 2)}
                 </div>
             </div>
         );
     }
+    const { size = "md", className, children, alt: _alt, ...rest } = props;
     return (
         <div
             ref={ref}
@@ -88,7 +94,7 @@ export const Avatar = forwardRef<HTMLDivElement, AvatarProps>(function Avatar(
             data-size={size}
             {...rest}
         >
-            {props.children}
+            {children}
         </div>
     );
 });

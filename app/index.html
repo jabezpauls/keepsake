@@ -4,6 +4,169 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Keepsake</title>
+        <!--
+          Dev-only IPC mock. When the URL has `?mock=1` (or `?gallery=1`)
+          we install a synchronous fake `window.__TAURI_INTERNALS__` so
+          the React app can boot without the Tauri runtime — useful for
+          Playwright MCP testing and ad-hoc browser dev. The mock data
+          mirrors what the Phase 3 tour spec uses.
+
+          Production builds strip this comment + the script via the same
+          path; the script only does anything when the URL flag is set.
+        -->
+        <script>
+            (function () {
+                var params = new URLSearchParams(window.location.search);
+                if (params.get("mock") !== "1") return;
+
+                var state = {
+                    userExists: false,
+                    session: null,
+                    sources: [
+                        { id: 1, name: "iCloud backup 2024", root_path: "/Volumes/Backup/iCloud", adapter_kind: "iphone_folder", linked_only: false, bytes_total: 82400000000, file_count: 18420, imported_at: 1719500000 },
+                    ],
+                    albums: [
+                        { id: 10, name: "Japan 2024", kind: "album", member_count: 412, has_password: false, unlocked: true, hidden: false },
+                        { id: 11, name: "Family", kind: "album", member_count: 2100, has_password: false, unlocked: true, hidden: false },
+                        { id: 12, name: "Private", kind: "album", member_count: 18, has_password: true, unlocked: false, hidden: false },
+                    ],
+                    timeline: [
+                        { id: 101, mime: "image/jpeg", taken_at_utc_day: 20010, is_video: false, is_live: true, is_raw: false },
+                        { id: 102, mime: "image/jpeg", taken_at_utc_day: 20010, is_video: false, is_live: false, is_raw: false },
+                        { id: 103, mime: "image/x-canon-cr2", taken_at_utc_day: 20009, is_video: false, is_live: false, is_raw: true },
+                        { id: 104, mime: "video/mp4", taken_at_utc_day: 20009, is_video: true, is_live: false, is_raw: false },
+                        { id: 105, mime: "image/jpeg", taken_at_utc_day: 20008, is_video: false, is_live: false, is_raw: false },
+                        { id: 106, mime: "image/jpeg", taken_at_utc_day: 20008, is_video: false, is_live: false, is_raw: false },
+                        { id: 107, mime: "image/jpeg", taken_at_utc_day: 19995, is_video: false, is_live: false, is_raw: false },
+                        { id: 108, mime: "image/jpeg", taken_at_utc_day: 19995, is_video: false, is_live: false, is_raw: false },
+                        { id: 109, mime: "image/jpeg", taken_at_utc_day: 19980, is_video: false, is_live: false, is_raw: false },
+                        { id: 110, mime: "image/jpeg", taken_at_utc_day: 19980, is_video: false, is_live: false, is_raw: false },
+                        { id: 111, mime: "image/jpeg", taken_at_utc_day: 19965, is_video: false, is_live: false, is_raw: false },
+                        { id: 112, mime: "image/jpeg", taken_at_utc_day: 19950, is_video: false, is_live: false, is_raw: false },
+                    ],
+                    people: [
+                        { id: 1, name: "Ami", face_count: 214, hidden: false, cover_asset_id: 101 },
+                        { id: 2, name: "Dad", face_count: 189, hidden: false, cover_asset_id: 102 },
+                        { id: 3, name: null, face_count: 42, hidden: false, cover_asset_id: 103 },
+                    ],
+                    nearDupClusters: [],
+                    mapPoints: [
+                        { asset_id: 101, lat: 35.6762, lon: 139.6503, taken_at_utc_day: 20010 },
+                        { asset_id: 105, lat: 48.8566, lon: 2.3522, taken_at_utc_day: 20008 },
+                    ],
+                    peers: [],
+                    trips: [
+                        { id: 100, name: "Tokyo, Japan · Sep 14 → Sep 21, 2024", member_count: 412, created_at: 1727000000 },
+                    ],
+                    places: [
+                        { place_id: "Japan:Tokyo", city: "Tokyo", region: "Kanto", country: "Japan", asset_count: 412, sample_asset_ids: [101, 102, 105, 107], centroid_lat: 35.6762, centroid_lon: 139.6503 },
+                        { place_id: "France:Paris", city: "Paris", region: "Île-de-France", country: "France", asset_count: 87, sample_asset_ids: [108, 109], centroid_lat: 48.8566, centroid_lon: 2.3522 },
+                    ],
+                    memoryGroups: [
+                        { year: 2024, years_ago: 1, asset_ids: [101, 102, 103, 104] },
+                        { year: 2023, years_ago: 2, asset_ids: [105, 106, 107] },
+                    ],
+                    yearInPhotos: [
+                        { year: 2024, asset_count: 18420, highlights: [101, 102, 103, 104, 105, 106] },
+                        { year: 2023, asset_count: 12300, highlights: [107, 108, 109, 110] },
+                    ],
+                    personYear: [
+                        { person_id: 1, year: 2024, asset_ids: [101, 102, 105] },
+                    ],
+                    smartAlbums: [],
+                };
+
+                window.__MV_MOCK_IPC__ = function (cmd, args) {
+                    args = args || {};
+                    switch (cmd) {
+                        case "user_exists": return Promise.resolve(state.userExists);
+                        case "list_users":
+                            return Promise.resolve(state.userExists
+                                ? [{ user_id: 1, username: state.session && state.session.username || "alice", created_at: 0 }]
+                                : []);
+                        case "list_local_peers": return Promise.resolve([]);
+                        case "create_user":
+                            state.userExists = true;
+                            state.session = { user_id: 1, username: args.username, default_collection_id: 1, hidden_unlocked: false };
+                            return Promise.resolve(state.session);
+                        case "unlock":
+                            state.session = { user_id: 1, username: args.username, default_collection_id: 1, hidden_unlocked: false };
+                            return Promise.resolve(state.session);
+                        case "lock": state.session = null; return Promise.resolve(null);
+                        case "list_sources": return Promise.resolve(state.sources);
+                        case "ingest_status": return Promise.resolve({ source_id: args.sourceId, state: { state: "done", inserted: 18420, deduped: 230, skipped: 0, errors: 0, files_processed: 18420, files_total: 18420 } });
+                        case "timeline_page": return Promise.resolve({ entries: state.timeline, next_cursor: null });
+                        case "asset_thumbnail": return Promise.resolve([]);
+                        case "asset_original": return Promise.resolve([]);
+                        case "asset_detail":
+                            return Promise.resolve({
+                                id: args.id,
+                                mime: args.id === 103 ? "image/x-canon-cr2" : args.id === 104 ? "video/mp4" : "image/jpeg",
+                                bytes: 3200000, width: 4032, height: 3024,
+                                duration_ms: args.id === 104 ? 12000 : null,
+                                taken_at_utc_day: 20010,
+                                is_video: args.id === 104, is_live: args.id === 101, is_motion: false,
+                                is_raw: args.id === 103, is_screenshot: false,
+                                filename: args.id === 103 ? "IMG_4567.CR2" : args.id === 104 ? "IMG_4568.MP4" : "IMG_" + (4500 + (args.id - 100)) + ".JPG",
+                                taken_at_utc: "2024-09-14T11:23:45Z",
+                                gps: { lat: 35.6762, lon: 139.6503, alt: 42.0 },
+                                device: "Apple iPhone 15 Pro",
+                                lens: "iPhone 15 Pro back triple camera 6.765mm f/1.78",
+                                exif_json: '{"ISO":400,"ExposureTime":"1/120","FocalLength":"6.765mm"}',
+                            });
+                        case "asset_faces": return Promise.resolve([]);
+                        case "list_albums": return Promise.resolve(state.albums);
+                        case "create_album":
+                            state.albums.push({ id: state.albums.length + 100, name: args.name, kind: "album", member_count: 0, has_password: !!args.password, unlocked: !args.password, hidden: false });
+                            return Promise.resolve(state.albums.length + 99);
+                        case "album_page": return Promise.resolve({ entries: state.timeline.slice(0, 6), next_cursor: null });
+                        case "add_to_album": return Promise.resolve(null);
+                        case "unlock_album": return Promise.resolve(true);
+                        case "export_album": return Promise.resolve({ files_written: 412, bytes_written: 1200000000, xmp_written: 412, skipped: 0 });
+                        case "list_people": return Promise.resolve(state.people);
+                        case "rename_person":
+                        case "hide_person":
+                        case "merge_people":
+                        case "split_person": return Promise.resolve(null);
+                        case "search_assets": return Promise.resolve(state.timeline.slice(0, 8).map(function (e, i) { return Object.assign({}, e, { score: i < 3 ? 0.75 - i * 0.1 : null }); }));
+                        case "search_text_exact": return Promise.resolve([]);
+                        case "index_asset_text": return Promise.resolve(0);
+                        case "map_points": return Promise.resolve(state.mapPoints);
+                        case "near_dup_list": return Promise.resolve(state.nearDupClusters);
+                        case "near_dup_rebuild": return Promise.resolve(0);
+                        case "ml_status": return Promise.resolve({ models_available: true, runtime_loaded: true, execution_provider: "Cpu", pending: 0, running: 0, done: 18420, failed: 0 });
+                        case "ml_models_enabled": return Promise.resolve(true);
+                        case "ml_reindex": return Promise.resolve({ embed_queued: 0, detect_queued: 0, assets_touched: 0 });
+                        case "ml_bundle_options": return Promise.resolve({ recommended: "lite", available: ["lite", "full"] });
+                        case "peer_my_ticket": return Promise.resolve({ base32: "aeaqcaibaeaqcaibaeaqcaib", my_node_id_hex: "fedcba9876543210", created_at: 1722103456 });
+                        case "peer_list": return Promise.resolve(state.peers);
+                        case "peer_accept_ticket": return Promise.resolve(null);
+                        case "peer_forget": return Promise.resolve(true);
+                        case "list_incoming_shares": return Promise.resolve([]);
+                        case "list_album_shares": return Promise.resolve([]);
+                        case "list_public_links": return Promise.resolve([]);
+                        case "list_pet_assets": return Promise.resolve([]);
+                        case "set_asset_pet": return Promise.resolve(true);
+                        case "list_trips": return Promise.resolve(state.trips);
+                        case "detect_trips_run": return Promise.resolve(state.trips.length);
+                        case "list_places": return Promise.resolve(state.places);
+                        case "memories_on_this_day": return Promise.resolve(state.memoryGroups);
+                        case "memories_year_in_photos": return Promise.resolve(state.yearInPhotos);
+                        case "memories_person_year": return Promise.resolve(state.personYear);
+                        case "list_smart_albums": return Promise.resolve(state.smartAlbums);
+                        case "person_face_thumbnail": return Promise.resolve([]);
+                        default:
+                            console.warn("[mv-mock] unhandled command:", cmd, args);
+                            return Promise.resolve(null);
+                    }
+                };
+
+                window.__TAURI_INTERNALS__ = {
+                    invoke: function (cmd, args) { return window.__MV_MOCK_IPC__(cmd, args); },
+                    metadata: { windows: [] },
+                };
+            })();
+        </script>
     </head>
     <body>
         <div id="root"></div>
