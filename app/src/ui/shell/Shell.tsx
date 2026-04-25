@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useSession, View } from "../../state/session";
 import { api } from "../../ipc";
 import type { MlStatus } from "../../bindings/MlStatus";
@@ -16,7 +16,10 @@ import AlbumDetail from "../albums/AlbumDetail";
 import AssetDetail from "../library/AssetDetail";
 import SearchHub from "../search/SearchHub";
 import MapView from "../map/MapView";
-import MapLibreMap from "../map/MapLibreMap";
+// MapLibre + its WebGL renderer is ~285 KB gzipped. Lazy-loaded so it
+// only ships when the user actually navigates to the Map view, keeping
+// the initial paint of Library / For You / Search unaffected.
+const MapLibreMap = lazy(() => import("../map/MapLibreMap"));
 import People from "../people/People";
 import PersonDetail from "../people/PersonDetail";
 import Duplicates from "../duplicates/Duplicates";
@@ -209,16 +212,27 @@ function ViewHost({ view }: { view: View }) {
         case "search":
             return <SearchHub />;
         case "map":
-            // `?newmap=1` opts in to the MapLibre-backed real-tile map
-            // while it's being built up across the migration steps.
-            // Default stays the legacy SVG MapView until step 4 cutover.
+            // MapLibre-backed real-tile map is the default. The legacy
+            // SVG MapView stays reachable via `?oldmap=1` as an offline
+            // escape hatch until the Tauri tile-proxy + PMTiles offline
+            // fallback lands.
             if (
                 typeof window !== "undefined" &&
-                new URLSearchParams(window.location.search).get("newmap") === "1"
+                new URLSearchParams(window.location.search).get("oldmap") === "1"
             ) {
-                return <MapLibreMap />;
+                return <MapView />;
             }
-            return <MapView />;
+            return (
+                <Suspense
+                    fallback={
+                        <div className="kp-map">
+                            <div className="kp-library-loading">Loading map…</div>
+                        </div>
+                    }
+                >
+                    <MapLibreMap />
+                </Suspense>
+            );
         case "people":
             return <People />;
         case "person":
