@@ -30,6 +30,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        // Custom URI scheme for basemap tiles. Every fetch from
+        // MapLibre's `transformRequest` lands here so the webview
+        // never opens a direct HTTP connection to a tile CDN — privacy
+        // controls + on-disk cache live in commands/map_tiles.rs.
+        .register_uri_scheme_protocol("mvtile", commands::map_tiles::handle_request)
         .setup(|app| {
             // Point ORT at the libonnxruntime shipped inside the app bundle.
             // Done in the setup hook (rather than `main`) because Tauri's

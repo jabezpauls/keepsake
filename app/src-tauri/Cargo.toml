@@ -41,6 +41,10 @@ hex.workspace = true
 base32.workspace = true
 base64.workspace = true
 rusqlite.workspace = true
+# HTTP client for the basemap tile proxy in commands/map_tiles.rs.
+# Already in workspace deps via the model downloader; pulling it as a
+# direct dep keeps ownership clear.
+ureq.workspace = true
 
 [features]
 # `ml-models` is on by default so plain `cargo tauri build` /

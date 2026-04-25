@@ -4003,6 +4003,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ts-rs",
+ "ureq",
 ]
 
 [[package]]

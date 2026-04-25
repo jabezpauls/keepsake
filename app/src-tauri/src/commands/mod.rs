@@ -10,6 +10,7 @@ pub mod analytics;
 pub mod auth;
 pub mod export;
 pub mod map;
+pub mod map_tiles;
 pub mod ml;
 pub mod nearp;
 pub mod peer;

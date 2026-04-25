@@ -27,8 +27,61 @@ import "./map.css";
 // Mounted from `Shell.tsx` only when `?newmap=1`. Step 4 of the
 // migration cuts over the default and removes the legacy implementation.
 
-const STYLE_LIGHT = "https://tiles.openfreemap.org/styles/liberty";
-const STYLE_DARK = "https://tiles.openfreemap.org/styles/dark";
+// Style URLs are served by the Tauri custom protocol in
+// `commands/map_tiles.rs` — the webview never opens a direct HTTPS
+// connection to the upstream tile CDN. Outside Tauri (e.g. browser
+// dev mode) we fall back to direct fetches; the protocol handler
+// only exists in the desktop runtime.
+const IS_TAURI = typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in window &&
+    !(window as { __MV_MOCK_IPC__?: unknown }).__MV_MOCK_IPC__;
+
+const STYLE_LIGHT = IS_TAURI
+    ? "mvtile://openfreemap/styles/liberty"
+    : "https://tiles.openfreemap.org/styles/liberty";
+const STYLE_DARK = IS_TAURI
+    ? "mvtile://openfreemap/styles/dark"
+    : "https://tiles.openfreemap.org/styles/dark";
+
+// MapLibre fetches every resource (styles, vector tiles, glyphs,
+// sprites, satellite raster) — `transformRequest` rewrites each
+// upstream URL to its `mvtile://` equivalent so the Tauri proxy
+// handles it. Browser dev mode (no Tauri) skips the rewrite and lets
+// the webview hit upstream directly, since the custom protocol only
+// exists in the desktop runtime.
+type TransformResult = { url: string } | undefined;
+const transformRequest = (url: string): TransformResult => {
+    if (!IS_TAURI) return { url };
+    if (url.startsWith("mvtile://")) return { url };
+    if (url.startsWith("https://tiles.openfreemap.org/styles/")) {
+        const name = url.slice("https://tiles.openfreemap.org/styles/".length);
+        return { url: `mvtile://openfreemap/styles/${name}` };
+    }
+    if (url.startsWith("https://tiles.openfreemap.org/planet/")) {
+        const suffix = url.slice("https://tiles.openfreemap.org/planet/".length);
+        return { url: `mvtile://openfreemap/tiles/${suffix}` };
+    }
+    if (url.startsWith("https://tiles.openfreemap.org/fonts/")) {
+        const suffix = url.slice("https://tiles.openfreemap.org/fonts/".length);
+        return { url: `mvtile://openfreemap-fonts/${suffix}` };
+    }
+    if (url.startsWith("https://tiles.openfreemap.org/sprites/ofm_f384/")) {
+        const suffix = url.slice(
+            "https://tiles.openfreemap.org/sprites/ofm_f384/".length,
+        );
+        return { url: `mvtile://openfreemap-sprite/${suffix}` };
+    }
+    // Esri satellite — not enabled by default yet, but the rewrite
+    // lands so a settings toggle in a follow-up commit can switch
+    // styles without round-tripping through this file.
+    const ESRI_PREFIX =
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/";
+    if (url.startsWith(ESRI_PREFIX)) {
+        const suffix = url.slice(ESRI_PREFIX.length);
+        return { url: `mvtile://esri/${suffix}` };
+    }
+    return { url };
+};
 
 // Cluster aggregation tuning. clusterRadius is in screen pixels —
 // 50 px matches the visual size of our marker so clusters of clusters
@@ -260,6 +313,7 @@ export default function MapLibreMap() {
                     interactiveLayerIds={[CLUSTERS_LAYER, POINTS_LAYER]}
                     onClick={onClick}
                     onLoad={() => setMapLoaded(true)}
+                    transformRequest={transformRequest}
                     cursor="grab"
                 >
                     <NavigationControl position="top-right" showCompass={false} />
