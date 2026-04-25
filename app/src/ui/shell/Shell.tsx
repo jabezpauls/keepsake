@@ -14,7 +14,7 @@ import Sources from "../sources/Sources";
 import AlbumsHub from "../albums/AlbumsHub";
 import AlbumDetail from "../albums/AlbumDetail";
 import AssetDetail from "../library/AssetDetail";
-import Search from "../search/Search";
+import SearchHub from "../search/SearchHub";
 import MapView from "../map/MapView";
 import People from "../people/People";
 import PersonDetail from "../people/PersonDetail";
@@ -206,7 +206,7 @@ function ViewHost({ view }: { view: View }) {
                 />
             );
         case "search":
-            return <Search />;
+            return <SearchHub />;
         case "map":
             return <MapView />;
         case "people":
