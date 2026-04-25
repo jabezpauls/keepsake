@@ -1,0 +1,259 @@
+/*
+ * Keepsake design tokens — Phase 0 skeleton.
+ *
+ * Defines the full token tree for color, type, spacing, radius, shadow,
+ * motion, and layering. Light and dark themes share token *names*;
+ * theme-specific values are swapped via :root[data-theme="…"] selectors,
+ * with `prefers-color-scheme` driving the auto fallback.
+ *
+ * NOT yet consumed by components. Phase 1 builds the primitive layer
+ * (`primitives.css` + per-component CSS) on top of these tokens, and
+ * later phases migrate feature screens off `styles.css` onto them.
+ *
+ * Convention:
+ *   --color-*   semantic colors (canvas, surface-1..3, text-*, border-*, etc.)
+ *   --color-accent-50..900   accent ramp (theme-aware)
+ *   --space-0..12   4 px base scale: 0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96
+ *   --radius-{sm,md,lg,xl,full}
+ *   --shadow-{sm,md,lg}   restrained — Apple/Linear barely use any
+ *   --duration-*, --ease-*   motion language
+ *   --font-{display,title-1,title-2,body,caption,mono}   type scale
+ *   --z-*   stacking context
+ */
+
+/* ------------------------------------------------------------------------ */
+/* Theme-neutral tokens                                                      */
+/* ------------------------------------------------------------------------ */
+
+:root {
+    /* Spacing — 4 px base */
+    --space-0: 0;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-7: 32px;
+    --space-8: 40px;
+    --space-9: 48px;
+    --space-10: 64px;
+    --space-11: 80px;
+    --space-12: 96px;
+
+    /* Radius */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 9999px;
+
+    /* Motion — durations */
+    --duration-instant: 80ms;
+    --duration-fast: 160ms;
+    --duration-base: 240ms;
+    --duration-slow: 400ms;
+    --duration-shared-layout: 320ms;
+
+    /* Motion — easing */
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-decel: cubic-bezier(0, 0, 0.2, 1);
+    --ease-accel: cubic-bezier(0.4, 0, 1, 1);
+    /* Linear's signature spring-ish curve */
+    --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+
+    /* Type — Inter Variable for UI, JetBrains Mono for code */
+    --font-family-ui: "Inter Variable", -apple-system, BlinkMacSystemFont,
+        "Segoe UI", system-ui, sans-serif;
+    --font-family-mono: "JetBrains Mono Variable", ui-monospace,
+        SFMono-Regular, "SF Mono", Consolas, monospace;
+
+    /* Type scale — declared as composite shorthand for use with `font:` */
+    --font-display: 600 32px/40px var(--font-family-ui);
+    --font-title-1: 600 22px/28px var(--font-family-ui);
+    --font-title-2: 600 17px/24px var(--font-family-ui);
+    --font-body: 400 14px/20px var(--font-family-ui);
+    --font-caption: 400 12px/16px var(--font-family-ui);
+    --font-mono: 400 13px/20px var(--font-family-mono);
+
+    /* Z-index layering */
+    --z-app: 0;
+    --z-overlay-chrome: 100;
+    --z-popover: 1000;
+    --z-modal: 2000;
+    --z-toast: 3000;
+    --z-cmdk: 4000;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Light theme (default)                                                     */
+/* Applied when:                                                             */
+/*   - data-theme is not set AND prefers-color-scheme is light, OR           */
+/*   - data-theme="light" is set explicitly.                                 */
+/* ------------------------------------------------------------------------ */
+
+:root,
+:root[data-theme="light"] {
+    color-scheme: light;
+
+    /* Surfaces — canvas is the page bg, surface-1..3 are elevated panels */
+    --color-canvas: #fafafa;
+    --color-surface-1: #ffffff;
+    --color-surface-2: #f4f4f5;
+    --color-surface-3: #e4e4e7;
+
+    /* Text */
+    --color-text-primary: #0b0b0b;
+    --color-text-secondary: #3f3f46;
+    --color-text-tertiary: #71717a;
+    --color-text-disabled: #a1a1aa;
+    --color-text-on-accent: #ffffff;
+
+    /* Borders */
+    --color-border-subtle: rgba(0, 0, 0, 0.06);
+    --color-border-default: rgba(0, 0, 0, 0.10);
+    --color-border-strong: rgba(0, 0, 0, 0.18);
+    --color-border-focus: #3a72e5;
+
+    /* Accent ramp — light mode (deeper blues for AA contrast on white) */
+    --color-accent-50: #eaf1fc;
+    --color-accent-100: #d2e0f8;
+    --color-accent-200: #a6c2f1;
+    --color-accent-300: #79a3ea;
+    --color-accent-400: #5589e3;
+    --color-accent-500: #3a72e5; /* primary accent */
+    --color-accent-600: #2e5cb8;
+    --color-accent-700: #23478b;
+    --color-accent-800: #17315e;
+    --color-accent-900: #0c1c31;
+
+    /* Status */
+    --color-success-500: #16a34a;
+    --color-warning-500: #f59e0b;
+    --color-danger-500: #dc2626;
+    --color-info-500: #0891b2;
+
+    /* Overlay (modal scrim) */
+    --color-overlay: rgba(0, 0, 0, 0.45);
+
+    /* Shadow — soft and warm for light mode */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.14);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Dark theme                                                                */
+/* Applied when:                                                             */
+/*   - data-theme is not set AND prefers-color-scheme is dark, OR            */
+/*   - data-theme="dark" is set explicitly.                                  */
+/* The auto rule uses :not([data-theme="light"]) so an explicit "light"      */
+/* user override in dark OS keeps light tokens.                              */
+/* ------------------------------------------------------------------------ */
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        color-scheme: dark;
+
+        --color-canvas: #0b0b0b;
+        --color-surface-1: #161616;
+        --color-surface-2: #1c1c1c;
+        --color-surface-3: #232323;
+
+        --color-text-primary: #fafafa;
+        --color-text-secondary: #d4d4d8;
+        --color-text-tertiary: #a1a1aa;
+        --color-text-disabled: #52525b;
+        --color-text-on-accent: #0b0b0b;
+
+        --color-border-subtle: rgba(255, 255, 255, 0.06);
+        --color-border-default: rgba(255, 255, 255, 0.10);
+        --color-border-strong: rgba(255, 255, 255, 0.18);
+        --color-border-focus: #7aa2f7;
+
+        /* Accent ramp — dark mode (lighter blues for AA contrast on near-black) */
+        --color-accent-50: #0c1c31;
+        --color-accent-100: #17315e;
+        --color-accent-200: #23478b;
+        --color-accent-300: #2e5cb8;
+        --color-accent-400: #5589e3;
+        --color-accent-500: #7aa2f7; /* primary accent — matches legacy --accent */
+        --color-accent-600: #95b6f8;
+        --color-accent-700: #b1cafa;
+        --color-accent-800: #cdddfb;
+        --color-accent-900: #e8effd;
+
+        --color-success-500: #22c55e;
+        --color-warning-500: #f59e0b;
+        --color-danger-500: #ef4444;
+        --color-info-500: #06b6d4;
+
+        --color-overlay: rgba(0, 0, 0, 0.65);
+
+        /* Shadow — stronger and cooler for dark mode */
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.50);
+        --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.60);
+    }
+}
+
+/* Explicit dark override — wins over both light default and auto media query.
+ * Mirrors the dark-mode block above. Duplicated rather than @applied because
+ * CSS doesn't have @apply in vanilla. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --color-canvas: #0b0b0b;
+    --color-surface-1: #161616;
+    --color-surface-2: #1c1c1c;
+    --color-surface-3: #232323;
+
+    --color-text-primary: #fafafa;
+    --color-text-secondary: #d4d4d8;
+    --color-text-tertiary: #a1a1aa;
+    --color-text-disabled: #52525b;
+    --color-text-on-accent: #0b0b0b;
+
+    --color-border-subtle: rgba(255, 255, 255, 0.06);
+    --color-border-default: rgba(255, 255, 255, 0.10);
+    --color-border-strong: rgba(255, 255, 255, 0.18);
+    --color-border-focus: #7aa2f7;
+
+    --color-accent-50: #0c1c31;
+    --color-accent-100: #17315e;
+    --color-accent-200: #23478b;
+    --color-accent-300: #2e5cb8;
+    --color-accent-400: #5589e3;
+    --color-accent-500: #7aa2f7;
+    --color-accent-600: #95b6f8;
+    --color-accent-700: #b1cafa;
+    --color-accent-800: #cdddfb;
+    --color-accent-900: #e8effd;
+
+    --color-success-500: #22c55e;
+    --color-warning-500: #f59e0b;
+    --color-danger-500: #ef4444;
+    --color-info-500: #06b6d4;
+
+    --color-overlay: rgba(0, 0, 0, 0.65);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.50);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.60);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Reduced motion                                                            */
+/* Collapse every motion duration to 0 — framer-motion's useReducedMotion    */
+/* picks up on the same media query for layout transitions.                  */
+/* ------------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --duration-instant: 0ms;
+        --duration-fast: 0ms;
+        --duration-base: 0ms;
+        --duration-slow: 0ms;
+        --duration-shared-layout: 0ms;
+    }
+}
