@@ -103,12 +103,20 @@ export default function MapView() {
         setViewport(fitToPoints(points));
     }, [points]);
 
-    // Cluster: grid-bucket then collision-merge.
+    // Cluster: grid-bucket, then merge clusters that visually overlap on
+    // the rendered canvas. The merge step uses the *actual* canvas size
+    // so the threshold matches what the user sees — earlier versions
+    // computed the test in viewBox units, which under-estimated overlap
+    // by ~1.7× and produced one giant blob at high zoom even when the
+    // bucket grid had already split landmarks apart.
+    //
+    // Bucket-size scales as `2/zoom` (much finer than the original
+    // `12/zoom`): adjacent landmarks 0.05° apart split into different
+    // buckets by zoom 40. Photos within a single landmark (≤0.003° σ)
+    // stay merged at every zoom — they belong in one circle.
     const clusters = useMemo(() => {
         if (!points.length) return [];
-        // Grid size in degrees scales inversely with zoom — at world view
-        // we bucket 12° tiles, at zoom 16 we're down to 0.75°.
-        const gridDeg = 12 / Math.max(viewport.zoom, 1);
+        const gridDeg = 2 / Math.max(viewport.zoom, 1);
         const buckets = new Map<string, MapPoint[]>();
         for (const p of points) {
             const gx = Math.floor(p.lon / gridDeg);
@@ -123,8 +131,8 @@ export default function MapView() {
             avgLat: pts.reduce((s, p) => s + p.lat, 0) / pts.length,
             avgLon: pts.reduce((s, p) => s + p.lon, 0) / pts.length,
         }));
-        return mergeOverlapping(raw, viewport.zoom);
-    }, [points, viewport.zoom]);
+        return mergeOverlapping(raw, viewport.zoom, canvasSize.w);
+    }, [points, viewport.zoom, canvasSize.w]);
 
     // Wheel zoom + mouse-drag pan. The SVG only mounts after the data
     // query resolves (loading/empty states render placeholder divs), so
@@ -379,6 +387,7 @@ export default function MapView() {
                         <ClusterMarker
                             key={i}
                             cluster={c}
+                            zoom={viewport.zoom}
                             x={screen.x}
                             y={screen.y}
                             onSelect={() => setSelected(c.points)}
@@ -513,31 +522,45 @@ function zoomAt(
 // Cluster marker size in screen pixels — constant regardless of zoom.
 // Snapchat's Snap Map sticks to ~36 px for individual snaps; we scale
 // gently with count so a 600-photo cluster reads as denser without
-// dwarfing single-photo markers next to it.
-function markerSize(count: number): number {
-    if (count === 1) return 36;
+// dwarfing single-photo markers next to it. At deep zoom (the per-photo
+// rendering path), shrink singletons so adjacent pins from a tight
+// landmark cluster don't visually collide.
+function markerSize(count: number, zoom: number): number {
+    if (count === 1) return zoom > 48 ? 18 : 36;
     return Math.min(56, 36 + Math.log10(count) * 8);
 }
 
 // Two clusters merge when their centroids are closer than the sum of
-// their projected radii — prevents overlap halos at low zoom levels.
-function mergeOverlapping(raw: ClusterRaw[], zoom: number): ClusterRaw[] {
+// their *screen-pixel* radii — earlier versions did the test in viewBox
+// units, which under-estimated overlap by canvasW / W (~1.7× on a
+// 1270 px canvas with our 720 px viewBox), so adjacent landmarks at
+// deep zoom always re-merged into one bubble after bucketing already
+// split them. Now we project to canvas pixels using the same
+// `xMidYMid meet` math as `projectToCanvas` and compare directly.
+function mergeOverlapping(
+    raw: ClusterRaw[],
+    zoom: number,
+    canvasW: number,
+): ClusterRaw[] {
+    // Scale: 1 viewBox unit → how many screen pixels (uniform — viewBox
+    // and canvas may differ in aspect ratio, but `xMidYMid meet` picks
+    // the smaller of the two, which on our common landscape canvas is
+    // canvasW / vbW). Falls back to the old behaviour when canvas hasn't
+    // measured yet (avoids divide-by-zero on first render).
+    const pxPerVb = canvasW > 0 ? (canvasW * zoom) / W : zoom;
     const out: ClusterRaw[] = [];
     for (const c of raw) {
         const cx = W / 2 + (c.avgLon / 360) * W;
         const cy = H / 2 - (c.avgLat / 180) * H;
-        // Convert pixel marker radius into world-units so we can compare
-        // centroid distances on the same scale. At zoom=z, 1 viewBox unit
-        // ≈ canvasW / vbW screen px → so px → world = px / scale.
-        const cr = markerSize(c.points.length) / 2 / zoom;
+        const cr = markerSize(c.points.length, zoom) / 2;
         let merged = false;
         for (const o of out) {
             const ox = W / 2 + (o.avgLon / 360) * W;
             const oy = H / 2 - (o.avgLat / 180) * H;
-            const or = markerSize(o.points.length) / 2 / zoom;
-            const dx = ox - cx;
-            const dy = oy - cy;
-            if (Math.sqrt(dx * dx + dy * dy) < cr + or) {
+            const or = markerSize(o.points.length, zoom) / 2;
+            const dxPx = (ox - cx) * pxPerVb;
+            const dyPx = (oy - cy) * pxPerVb;
+            if (Math.sqrt(dxPx * dxPx + dyPx * dyPx) < cr + or) {
                 // Re-centroid weighted by counts.
                 const total = o.points.length + c.points.length;
                 o.avgLat =
@@ -584,6 +607,7 @@ function projectToCanvas(
 
 interface ClusterMarkerProps {
     cluster: ClusterRaw;
+    zoom: number;
     x: number;
     y: number;
     onSelect: () => void;
@@ -592,8 +616,8 @@ interface ClusterMarkerProps {
 // Snap-Map-style marker: circular thumbnail of a representative photo,
 // crisp white ring, drop shadow, and (when the cluster is > 1) a small
 // count badge in the lower-right corner. Centred on (x, y).
-function ClusterMarker({ cluster, x, y, onSelect }: ClusterMarkerProps) {
-    const size = markerSize(cluster.points.length);
+function ClusterMarker({ cluster, zoom, x, y, onSelect }: ClusterMarkerProps) {
+    const size = markerSize(cluster.points.length, zoom);
     // Pick the median point's asset_id as the cover so the same cluster
     // shows the same thumbnail across re-renders (avoids flicker as the
     // grid bucketing shifts a few photos around).

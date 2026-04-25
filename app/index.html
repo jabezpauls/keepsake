@@ -51,20 +51,51 @@
                     ],
                     nearDupClusters: [],
                     mapPoints: (function () {
-                        // Synthesize a regional cluster (~Bangalore) so the
-                        // auto-fit ↔ cluster-radius interaction can be tested
-                        // realistically — most users have one dominant region.
-                        var pts = [];
-                        for (var i = 0; i < 600; i++) {
-                            pts.push({
-                                asset_id: 1000 + i,
-                                lat: 12.97 + (Math.random() - 0.5) * 4,
-                                lon: 77.59 + (Math.random() - 0.5) * 4,
-                                taken_at_utc_day: 20000 + i,
-                            });
+                        // Real photos cluster around landmarks — home, work,
+                        // parks, restaurants, weekend trips — not uniformly
+                        // across a 4° box. Seeding the mock data around 10
+                        // recognisable Bangalore locations produces natural-
+                        // looking aggregations that exercise the clustering
+                        // algorithm the way a real vault would. Each landmark
+                        // gets a Gaussian halo (~300m σ) so they collapse
+                        // into one cluster at world zoom and split into
+                        // street-level pins at deep zoom.
+                        var landmarks = [
+                            { name: "Cubbon Park",       lat: 12.9763, lon: 77.5929, n: 80 },
+                            { name: "Lalbagh",           lat: 12.9507, lon: 77.5848, n: 70 },
+                            { name: "MG Road",           lat: 12.9759, lon: 77.6054, n: 65 },
+                            { name: "Indiranagar",       lat: 12.9784, lon: 77.6408, n: 60 },
+                            { name: "Koramangala",       lat: 12.9352, lon: 77.6245, n: 90 }, // home
+                            { name: "HSR Layout",        lat: 12.9116, lon: 77.6473, n: 50 },
+                            { name: "Whitefield",        lat: 12.9698, lon: 77.7500, n: 55 }, // work
+                            { name: "Electronic City",   lat: 12.8456, lon: 77.6603, n: 40 },
+                            { name: "Jayanagar",         lat: 12.9293, lon: 77.5826, n: 45 },
+                            { name: "Bangalore Palace",  lat: 13.0030, lon: 77.5921, n: 45 },
+                        ];
+                        // Box-Muller for Gaussian jitter — a uniform halo
+                        // would still cluster but look like a hard disc;
+                        // Gaussian feels organic.
+                        function gauss() {
+                            var u = 1 - Math.random();
+                            var v = Math.random();
+                            return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
                         }
-                        // Plus a handful of distant outliers so panning
-                        // across the antimeridian can be checked.
+                        var SIGMA = 0.003; // ≈300 m at this latitude
+                        var pts = [];
+                        var id = 1000;
+                        for (var i = 0; i < landmarks.length; i++) {
+                            var lm = landmarks[i];
+                            for (var j = 0; j < lm.n; j++) {
+                                pts.push({
+                                    asset_id: id++,
+                                    lat: lm.lat + gauss() * SIGMA,
+                                    lon: lm.lon + gauss() * SIGMA,
+                                    taken_at_utc_day: 20000 - (id % 365),
+                                });
+                            }
+                        }
+                        // Distant outliers — trips logged once, so the
+                        // auto-fit IQR fence has something to ignore.
                         pts.push({ asset_id: 101, lat: 35.6762, lon: 139.6503, taken_at_utc_day: 20010 });
                         pts.push({ asset_id: 105, lat: 48.8566, lon: 2.3522, taken_at_utc_day: 20008 });
                         pts.push({ asset_id: 109, lat: 40.7128, lon: -74.0060, taken_at_utc_day: 19980 });
