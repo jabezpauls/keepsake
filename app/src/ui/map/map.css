@@ -92,14 +92,106 @@
     background: var(--color-surface-3);
 }
 
-.kp-map-canvas {
+/* Stage = canvas + markers overlay; relatively positioned so the
+ * `.kp-map-markers` absolute container resolves to it (and not the
+ * outer flex column, which would put markers behind the toolbar). */
+.kp-map-stage {
+    position: relative;
     flex: 1;
+    overflow: hidden;
+}
+
+.kp-map-canvas {
     width: 100%;
     height: 100%;
     background: var(--map-bg);
     display: block;
     user-select: none;
     touch-action: none;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Snap-Map-style markers — HTML overlay positioned over the SVG canvas      */
+/* ------------------------------------------------------------------------ */
+
+.kp-map-markers {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.kp-map-marker {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: transform var(--duration-fast) var(--ease-spring);
+    will-change: transform;
+}
+
+.kp-map-marker:hover {
+    transform: translate(-50%, -50%) scale(1.08);
+    z-index: 1;
+}
+
+.kp-map-marker:hover .kp-map-marker-photo {
+    box-shadow:
+        0 4px 14px rgba(0, 0, 0, 0.55),
+        0 2px 4px rgba(0, 0, 0, 0.3),
+        0 0 0 4px rgba(122, 162, 247, 0.35);
+}
+
+/* Inner photo wrapper owns the circular clip — keeps the badge outside
+ * the overflow boundary so multi-digit counts render unclipped. */
+.kp-map-marker-photo {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: var(--radius-full);
+    overflow: hidden;
+    border: 3px solid #fff;
+    background: var(--color-surface-2);
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.45),
+        0 1px 2px rgba(0, 0, 0, 0.25);
+    box-sizing: border-box;
+    transition: box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.kp-map-marker-photo > .thumb,
+.kp-map-marker-photo > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-map-marker-photo > div.thumb {
+    background: var(--color-surface-3);
+}
+
+.kp-map-marker-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    background: var(--color-accent-500);
+    color: #fff;
+    font: var(--font-caption);
+    font-weight: 700;
+    font-size: 11px;
+    line-height: 22px;
+    text-align: center;
+    border: 2px solid var(--map-bg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
 }
 
 /* ------------------------------------------------------------------------ */

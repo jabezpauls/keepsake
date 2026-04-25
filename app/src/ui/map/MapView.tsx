@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, MapPin, Minus, Plus } from "lucide-react";
 import { feature } from "topojson-client";
@@ -68,6 +75,22 @@ export default function MapView() {
     const [selected, setSelected] = useState<MapPoint[] | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
     const fitOnceRef = useRef(false);
+
+    // Tracking the SVG's actual rendered size so HTML markers overlaid on
+    // top can re-project to canvas pixels through pan/zoom changes.
+    const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
+    useLayoutEffect(() => {
+        const el = svgRef.current;
+        if (!el) return;
+        const resize = () => {
+            const r = el.getBoundingClientRect();
+            setCanvasSize({ w: r.width, h: r.height });
+        };
+        resize();
+        const ro = new ResizeObserver(resize);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [query.data]);
 
     const points = useMemo(() => query.data ?? [], [query.data]);
 
@@ -267,6 +290,7 @@ export default function MapView() {
                     </Button>
                 </div>
             </header>
+            <div className="kp-map-stage">
             <svg
                 ref={setSvgRef}
                 className="kp-map-canvas"
@@ -337,50 +361,32 @@ export default function MapView() {
                     strokeWidth={0.6 / viewport.zoom}
                 />
 
+            </svg>
+            {/* Snap-Map-style HTML markers overlaid on the SVG. Sized in
+              * screen pixels (constant regardless of zoom) and positioned
+              * via viewBox→canvas re-projection so they stay glued to the
+              * map through pan + zoom. */}
+            <div className="kp-map-markers" aria-hidden={selected ? "true" : undefined}>
                 {clusters.map((c, i) => {
-                    const { x, y } = project(c.avgLat, c.avgLon);
-                    const r = clusterRadius(c.points.length, viewport.zoom);
+                    const screen = projectToCanvas(
+                        c.avgLat,
+                        c.avgLon,
+                        viewport,
+                        canvasSize,
+                    );
+                    if (!screen) return null;
                     return (
-                        <g
+                        <ClusterMarker
                             key={i}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setSelected(c.points);
-                            }}
-                            style={{ cursor: "pointer" }}
-                        >
-                            {/* Glow ring */}
-                            <circle
-                                cx={x}
-                                cy={y}
-                                r={r * 1.6}
-                                fill="var(--color-accent-500)"
-                                opacity={0.18}
-                            />
-                            <circle
-                                cx={x}
-                                cy={y}
-                                r={r}
-                                fill="var(--color-accent-500)"
-                                opacity={0.92}
-                                stroke="rgba(255,255,255,0.85)"
-                                strokeWidth={r * 0.08}
-                            />
-                            <text
-                                x={x}
-                                y={y + r * 0.35}
-                                textAnchor="middle"
-                                fill="#fff"
-                                fontSize={r * 0.95}
-                                fontWeight="600"
-                                style={{ pointerEvents: "none", userSelect: "none" }}
-                            >
-                                {c.points.length}
-                            </text>
-                        </g>
+                            cluster={c}
+                            x={screen.x}
+                            y={screen.y}
+                            onSelect={() => setSelected(c.points)}
+                        />
                     );
                 })}
-            </svg>
+            </div>
+            </div>
             {selected && (
                 <div className="kp-map-sheet">
                     <div className="kp-map-sheet-header">
@@ -498,16 +504,13 @@ function zoomAt(
     };
 }
 
-// Cluster radius — kept ~constant in *screen pixels* regardless of how
-// far the user has zoomed in. We compute the desired pixel radius from
-// the photo count, then divide by the zoom factor to convert into the
-// SVG's projection units (which shrink as we zoom). Without this scaling
-// the bubble appears tiny at world view (zoom=1) and fills the canvas
-// at zoom=30 (auto-fit on a regional library).
-function clusterRadius(count: number, zoom: number): number {
-    // Base radius in screen px: 16 px for 1 photo, ~40 px for 1000.
-    const screenPx = 14 + Math.log10(count + 1) * 6;
-    return screenPx / zoom;
+// Cluster marker size in screen pixels — constant regardless of zoom.
+// Snapchat's Snap Map sticks to ~36 px for individual snaps; we scale
+// gently with count so a 600-photo cluster reads as denser without
+// dwarfing single-photo markers next to it.
+function markerSize(count: number): number {
+    if (count === 1) return 36;
+    return Math.min(56, 36 + Math.log10(count) * 8);
 }
 
 // Two clusters merge when their centroids are closer than the sum of
@@ -517,12 +520,15 @@ function mergeOverlapping(raw: ClusterRaw[], zoom: number): ClusterRaw[] {
     for (const c of raw) {
         const cx = W / 2 + (c.avgLon / 360) * W;
         const cy = H / 2 - (c.avgLat / 180) * H;
-        const cr = clusterRadius(c.points.length, zoom) * 1.6;
+        // Convert pixel marker radius into world-units so we can compare
+        // centroid distances on the same scale. At zoom=z, 1 viewBox unit
+        // ≈ canvasW / vbW screen px → so px → world = px / scale.
+        const cr = markerSize(c.points.length) / 2 / zoom;
         let merged = false;
         for (const o of out) {
             const ox = W / 2 + (o.avgLon / 360) * W;
             const oy = H / 2 - (o.avgLat / 180) * H;
-            const or = clusterRadius(o.points.length, zoom) * 1.6;
+            const or = markerSize(o.points.length) / 2 / zoom;
             const dx = ox - cx;
             const dy = oy - cy;
             if (Math.sqrt(dx * dx + dy * dy) < cr + or) {
@@ -540,4 +546,78 @@ function mergeOverlapping(raw: ClusterRaw[], zoom: number): ClusterRaw[] {
         if (!merged) out.push(c);
     }
     return out;
+}
+
+// Project (lat, lon) world coords → canvas pixel coords, accounting for
+// the SVG's xMidYMid-meet aspect-ratio fit (which letterboxes one axis
+// when the canvas's ratio doesn't match our 2:1 viewBox).
+function projectToCanvas(
+    lat: number,
+    lon: number,
+    v: Viewport,
+    canvas: { w: number; h: number },
+): { x: number; y: number } | null {
+    if (canvas.w === 0 || canvas.h === 0) return null;
+    const worldX = W / 2 + (lon / 360) * W;
+    const worldY = H / 2 - (lat / 180) * H;
+    const vbX = W / 2 - W / v.zoom / 2 + v.cx;
+    const vbY = H / 2 - H / v.zoom / 2 + v.cy;
+    const vbW = W / v.zoom;
+    const vbH = H / v.zoom;
+    // xMidYMid meet → uniform scale = min, viewBox region centred.
+    const scale = Math.min(canvas.w / vbW, canvas.h / vbH);
+    const regionW = vbW * scale;
+    const regionH = vbH * scale;
+    const offsetX = (canvas.w - regionW) / 2;
+    const offsetY = (canvas.h - regionH) / 2;
+    return {
+        x: offsetX + (worldX - vbX) * scale,
+        y: offsetY + (worldY - vbY) * scale,
+    };
+}
+
+interface ClusterMarkerProps {
+    cluster: ClusterRaw;
+    x: number;
+    y: number;
+    onSelect: () => void;
+}
+
+// Snap-Map-style marker: circular thumbnail of a representative photo,
+// crisp white ring, drop shadow, and (when the cluster is > 1) a small
+// count badge in the lower-right corner. Centred on (x, y).
+function ClusterMarker({ cluster, x, y, onSelect }: ClusterMarkerProps) {
+    const size = markerSize(cluster.points.length);
+    // Pick the median point's asset_id as the cover so the same cluster
+    // shows the same thumbnail across re-renders (avoids flicker as the
+    // grid bucketing shifts a few photos around).
+    const cover =
+        cluster.points[Math.floor(cluster.points.length / 2)]?.asset_id ??
+        cluster.points[0]?.asset_id;
+    if (cover == null) return null;
+    return (
+        <button
+            type="button"
+            className="kp-map-marker"
+            style={{
+                left: `${x}px`,
+                top: `${y}px`,
+                width: `${size}px`,
+                height: `${size}px`,
+            }}
+            onClick={onSelect}
+            aria-label={`${cluster.points.length} ${
+                cluster.points.length === 1 ? "photo" : "photos"
+            } at ${cluster.avgLat.toFixed(2)}, ${cluster.avgLon.toFixed(2)}`}
+        >
+            <span className="kp-map-marker-photo">
+                <ThumbImage assetId={cover} size={128} mime="image/jpeg" alt="" />
+            </span>
+            {cluster.points.length > 1 && (
+                <span className="kp-map-marker-badge">
+                    {cluster.points.length > 999 ? "999+" : cluster.points.length}
+                </span>
+            )}
+        </button>
+    );
 }
