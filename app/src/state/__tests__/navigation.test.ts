@@ -19,11 +19,11 @@ beforeEach(() => {
 });
 
 describe("session back-stack", () => {
-    it("starts with a single library frame", () => {
+    it("starts with a single for-you frame", () => {
         const { view, backstack } = useSession.getState();
         expect(backstack).toHaveLength(1);
-        expect(backstack[0]).toEqual({ kind: "library" });
-        expect(view).toEqual({ kind: "library" });
+        expect(backstack[0]).toEqual({ kind: "for-you" });
+        expect(view).toEqual({ kind: "for-you" });
     });
 
     it("setView replaces the entire stack with one frame", () => {
@@ -67,13 +67,13 @@ describe("session back-stack", () => {
         expect(view).toEqual(backstack[backstack.length - 1]);
     });
 
-    it("reset wipes the stack back to library default", () => {
+    it("reset wipes the stack back to for-you default", () => {
         useSession.getState().setView({ kind: "albums" });
         useSession.getState().pushView({ kind: "person", id: 1, name: "Mom" });
         useSession.getState().setHiddenUnlocked(true);
         useSession.getState().reset();
         const s = useSession.getState();
-        expect(s.backstack).toEqual([{ kind: "library" }]);
+        expect(s.backstack).toEqual([{ kind: "for-you" }]);
         expect(s.hiddenUnlocked).toBe(false);
         expect(s.session).toBe(null);
     });

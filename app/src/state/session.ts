@@ -87,7 +87,10 @@ interface SessionStore {
     reset: () => void;
 }
 
-const initialView: View = { kind: "library" };
+// Phase 5 makes For-You the default landing — auto-curated memories
+// + recent trips + featured people. Users with brand-new vaults get
+// the empty-state CTA; everyone else gets the discovery surface.
+const initialView: View = { kind: "for-you" };
 
 export const useSession = create<SessionStore>((set) => ({
     session: null,

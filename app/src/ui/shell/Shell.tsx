@@ -9,7 +9,7 @@ import LegacyShell from "./LegacyShell";
 import { CommandPalette } from "../cmdk/CommandPalette";
 
 import LibraryRouter from "../library/LibraryRouter";
-import ForYouPlaceholder from "../for_you/ForYouPlaceholder";
+import ForYou from "../for_you/ForYou";
 import Sources from "../sources/Sources";
 import Albums from "../albums/Albums";
 import AlbumDetail from "../albums/AlbumDetail";
@@ -185,7 +185,7 @@ function ViewHost({ view }: { view: View }) {
         case "library":
             return <LibraryRouter />;
         case "for-you":
-            return <ForYouPlaceholder />;
+            return <ForYou />;
         case "timeline":
             // Timeline still maps directly until Phase 3 collapses it
             // into the new Library component.

@@ -1,0 +1,302 @@
+/*
+ * Phase 5 For-You — vertical scroll of horizontal carousels.
+ * Each section uses Card primitive + light tracking, mimicking the
+ * Apple Photos "For You" feed.
+ */
+
+.kp-foryou {
+    padding: var(--space-5) 0 var(--space-9);
+    height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-7);
+}
+
+.kp-foryou-header {
+    padding: 0 var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.kp-foryou-header h1 {
+    font: var(--font-display);
+    margin: 0;
+}
+
+.kp-foryou-eyebrow {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0;
+}
+
+.kp-foryou-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.kp-foryou-section header {
+    padding: 0 var(--space-5);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.kp-foryou-section header h2 {
+    font: var(--font-title-1);
+    margin: 0;
+}
+
+.kp-foryou-see-all {
+    background: transparent;
+    border: 0;
+    color: var(--color-accent-500);
+    font: var(--font-caption);
+    cursor: pointer;
+}
+
+.kp-foryou-see-all:hover {
+    color: var(--color-accent-600);
+}
+
+/* Horizontal carousel of cards. Native horizontal scroll with snap, no
+ * extra JS — works on touch + trackpad, and keyboard shift+wheel.
+ * Hide scrollbar visually but keep accessibility (scroll-bar gutter). */
+.kp-foryou-carousel {
+    display: flex;
+    gap: var(--space-3);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 var(--space-5);
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+.kp-foryou-carousel > * {
+    scroll-snap-align: start;
+    flex-shrink: 0;
+}
+
+/* Hero card — used for memories, year-in-photos, person-year. */
+.kp-foryou-hero {
+    width: 320px;
+    overflow: hidden;
+}
+
+.kp-foryou-hero-tall {
+    width: 240px;
+}
+
+.kp-foryou-hero-cover {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background: var(--color-surface-2);
+}
+
+.kp-foryou-hero-tall .kp-foryou-hero-cover {
+    aspect-ratio: 3 / 4;
+}
+
+.kp-foryou-hero-cover > .thumb,
+.kp-foryou-hero-cover > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-foryou-hero-meta {
+    padding: var(--space-3) var(--space-3) var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.kp-foryou-hero-meta strong {
+    font: var(--font-title-2);
+    color: var(--color-text-primary);
+}
+
+.kp-foryou-hero-meta span {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+}
+
+/* Pill card — places, smaller width with horizontal layout. */
+.kp-foryou-pill-card {
+    width: 200px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2);
+}
+
+.kp-foryou-pill-cover {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+}
+
+.kp-foryou-pill-cover > .thumb,
+.kp-foryou-pill-cover > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-foryou-pill-meta {
+    display: flex;
+    flex-direction: column;
+}
+
+.kp-foryou-pill-meta strong {
+    font: var(--font-body);
+    font-weight: 600;
+}
+
+.kp-foryou-pill-meta span {
+    font: var(--font-caption);
+    color: var(--color-text-tertiary);
+}
+
+/* People row — avatar + name. */
+.kp-foryou-people {
+    align-items: center;
+}
+
+.kp-foryou-person {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    width: 88px;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    font: var(--font-caption);
+    text-align: center;
+}
+
+.kp-foryou-person:hover {
+    color: var(--color-text-primary);
+}
+
+.kp-foryou-person span {
+    font: var(--font-caption);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+}
+
+/* Recent imports — small thumbnail row. */
+.kp-foryou-thumbs {
+    align-items: stretch;
+}
+
+.kp-foryou-thumb {
+    width: 96px;
+    height: 96px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--color-surface-2);
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+}
+
+.kp-foryou-thumb > .thumb,
+.kp-foryou-thumb > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.kp-foryou-thumb:hover {
+    outline: 2px solid var(--color-accent-300);
+    outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Memory slideshow — full-bleed Ken-Burns viewer                            */
+/* ------------------------------------------------------------------------ */
+
+.kp-memory-slideshow {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: var(--z-modal);
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+}
+
+.kp-memory-slideshow-chrome {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4) var(--space-5);
+    color: rgba(255, 255, 255, 0.85);
+    font: var(--font-title-2);
+    z-index: 2;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent);
+}
+
+.kp-memory-slideshow-chrome .kp-icon-button {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.kp-memory-slideshow-stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.kp-memory-slideshow-img {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.kp-memory-slideshow-img > .thumb,
+.kp-memory-slideshow-img > img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.kp-memory-slideshow-progress {
+    display: flex;
+    gap: 4px;
+    padding: var(--space-3) var(--space-5) var(--space-5);
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.4), transparent);
+}
+
+.kp-memory-slideshow-tick {
+    flex: 1;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: var(--radius-full);
+    transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.kp-memory-slideshow-tick[data-active="true"] {
+    background: rgba(255, 255, 255, 0.95);
+}
