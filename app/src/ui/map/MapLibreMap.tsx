@@ -1,34 +1,47 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MapPin } from "lucide-react";
-import { Map as MapGL, NavigationControl } from "react-map-gl/maplibre";
+import {
+    Map as MapGL,
+    NavigationControl,
+    Source,
+    Layer,
+    type MapRef,
+    type MapLayerMouseEvent,
+} from "react-map-gl/maplibre";
+import type { LngLatBoundsLike, GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { api } from "../../ipc";
-import { EmptyState } from "../../components";
+import { useSession } from "../../state/session";
+import type { MapPoint } from "../../bindings/MapPoint";
+import ThumbImage from "../timeline/ThumbImage";
+import { Button, EmptyState } from "../../components";
 import "./map.css";
 
-// New Map view backed by MapLibre GL JS — replaces the legacy SVG
-// equirectangular projection that had no labels, no roads, and forced
-// users to interpret photo positions against a featureless white blob.
+// MapLibre-backed Map view — replaces the legacy SVG equirectangular
+// projection with a real OSM-quality basemap. Clustering is delegated
+// to MapLibre's built-in Supercluster (in a Worker), which handles up
+// to ~100K markers and exposes `getClusterExpansionZoom` so a click
+// either zooms in or opens the cluster sheet at max zoom.
 //
-// Step 1 of the migration ships only the basemap. Step 2 will add
-// clusters + markers; step 3 adds the Tauri tile proxy + offline
-// PMTiles fallback; step 4 cuts over the default and removes the
-// legacy SVG implementation.
-//
-// Mounted from `Shell.tsx` only when the URL has `?newmap=1`. Old
-// `MapView.tsx` stays the default until step 4.
+// Mounted from `Shell.tsx` only when `?newmap=1`. Step 4 of the
+// migration cuts over the default and removes the legacy implementation.
 
-// OpenFreeMap is OSM-derived, free, key-less, and ships in a couple of
-// curated styles. Liberty is colourful + dense (Apple Maps-ish);
-// Positron is the calm light style; the dark variant gives us automatic
-// theme parity with the rest of the app.
 const STYLE_LIGHT = "https://tiles.openfreemap.org/styles/liberty";
 const STYLE_DARK = "https://tiles.openfreemap.org/styles/dark";
 
-// Reads the current `data-theme` attribute on <html> (set by
-// `appearance.ts`). When `auto`, falls back to OS preference. Re-runs
-// when the attribute mutates so the map style swaps live.
+// Cluster aggregation tuning. clusterRadius is in screen pixels —
+// 50 px matches the visual size of our marker so clusters of clusters
+// don't visibly overlap. clusterMaxZoom: at zoom > 14 we render
+// unclustered points (individual photo dots).
+const CLUSTER_RADIUS = 50;
+const CLUSTER_MAX_ZOOM = 14;
+
+const SOURCE_ID = "photos";
+const CLUSTERS_LAYER = "clusters";
+const CLUSTER_COUNT_LAYER = "cluster-count";
+const POINTS_LAYER = "unclustered-point";
+
 function useResolvedTheme(): "light" | "dark" {
     const compute = (): "light" | "dark" => {
         if (typeof document === "undefined") return "light";
@@ -59,23 +72,134 @@ function useResolvedTheme(): "light" | "dark" {
     return theme;
 }
 
+// Compute lat/lon bounds for the dense 90% of points (5th–95th
+// percentile of each axis). Outliers — a single Tokyo photo amid 600
+// in Bangalore — don't pull the initial frame to a global view, but
+// they're still pannable to.
+function computeBounds(points: MapPoint[]): LngLatBoundsLike | null {
+    if (points.length === 0) return null;
+    const lats = points.map((p) => p.lat).sort((a, b) => a - b);
+    const lons = points.map((p) => p.lon).sort((a, b) => a - b);
+    const lo = (xs: number[]) => xs[Math.floor(xs.length * 0.05)] ?? xs[0];
+    const hi = (xs: number[]) => xs[Math.floor(xs.length * 0.95)] ?? xs[xs.length - 1];
+    return [
+        [lo(lons), lo(lats)],
+        [hi(lons), hi(lats)],
+    ];
+}
+
 export default function MapLibreMap() {
     const theme = useResolvedTheme();
+    const setView = useSession((s) => s.setView);
+    const currentView = useSession((s) => s.view);
+    const mapRef = useRef<MapRef | null>(null);
+
     const query = useQuery({
         queryKey: ["map-points"],
         queryFn: () => api.mapPoints(null, null, null),
     });
-    const points = query.data ?? [];
+    const points = useMemo(() => query.data ?? [], [query.data]);
 
-    // Pick a sensible initial frame: the centroid of the points, or the
-    // world if none. Step 2 will replace this with a proper bounds-fit
-    // once the cluster layer is wired.
-    const initialView = (() => {
-        if (points.length === 0) return { longitude: 0, latitude: 20, zoom: 1.5 };
-        const cLon = points.reduce((s, p) => s + p.lon, 0) / points.length;
-        const cLat = points.reduce((s, p) => s + p.lat, 0) / points.length;
-        return { longitude: cLon, latitude: cLat, zoom: 4 };
-    })();
+    // GeoJSON FeatureCollection for the photos source. Supercluster
+    // aggregates these into clusters by zoom level inside MapLibre.
+    const geojson = useMemo(() => {
+        return {
+            type: "FeatureCollection" as const,
+            features: points.map((p) => ({
+                type: "Feature" as const,
+                geometry: {
+                    type: "Point" as const,
+                    coordinates: [p.lon, p.lat],
+                },
+                properties: {
+                    asset_id: p.asset_id,
+                    taken_at_utc_day: p.taken_at_utc_day ?? null,
+                },
+            })),
+        };
+    }, [points]);
+
+    // The set of photos in the currently-selected cluster (rendered as
+    // a bottom sheet for browsing without leaving the map).
+    const [selected, setSelected] = useState<MapPoint[] | null>(null);
+
+    // Auto-fit on first data load *after* the map has finished
+    // loading. Doing it earlier (on points effect) loses the race
+    // against MapLibre's initialViewState — fitBounds gets overridden
+    // by the initial view animation. Tracking both `mapLoaded` and
+    // `points` and only firing once keeps the user's later pan/zoom
+    // sticky.
+    const [mapLoaded, setMapLoaded] = useState(false);
+    const fittedRef = useRef(false);
+    useEffect(() => {
+        if (fittedRef.current || !mapLoaded || points.length === 0) return;
+        const map = mapRef.current?.getMap();
+        if (!map) return;
+        const bounds = computeBounds(points);
+        if (!bounds) return;
+        fittedRef.current = true;
+        map.fitBounds(bounds, { padding: 80, duration: 0, maxZoom: 12 });
+    }, [points, mapLoaded]);
+
+    // Click handler — runs on every map click. We use the layer event
+    // pattern instead of `interactiveLayerIds` props because we need
+    // distinct behaviour for cluster vs single point.
+    const onClick = (e: MapLayerMouseEvent) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const map = mapRef.current?.getMap();
+        if (!map) return;
+
+        if (feature.layer.id === CLUSTERS_LAYER) {
+            const clusterId = feature.properties?.cluster_id as number;
+            const src = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
+            if (!src || clusterId == null) return;
+            const currentZoom = map.getZoom();
+            // Below clusterMaxZoom: zoom into the cluster so it splits.
+            // At/above: open the sheet listing every photo in it.
+            if (currentZoom < CLUSTER_MAX_ZOOM) {
+                src.getClusterExpansionZoom(clusterId).then((nextZoom) => {
+                    const geom = feature.geometry as GeoJSON.Point;
+                    map.easeTo({
+                        center: geom.coordinates as [number, number],
+                        zoom: nextZoom,
+                        duration: 400,
+                    });
+                });
+                return;
+            }
+            // Pull the cluster's leaves and open the sheet.
+            src.getClusterLeaves(clusterId, 1000, 0).then((leaves) => {
+                setSelected(
+                    leaves.map((leaf) => {
+                        const props = (leaf.properties ?? {}) as {
+                            asset_id: number;
+                            taken_at_utc_day: number | null;
+                        };
+                        const coords = (leaf.geometry as GeoJSON.Point)
+                            .coordinates as [number, number];
+                        return {
+                            asset_id: props.asset_id,
+                            lon: coords[0],
+                            lat: coords[1],
+                            taken_at_utc_day: props.taken_at_utc_day,
+                        };
+                    }),
+                );
+            });
+            return;
+        }
+        if (feature.layer.id === POINTS_LAYER) {
+            const props = (feature.properties ?? {}) as { asset_id: number };
+            setView({
+                kind: "asset",
+                id: props.asset_id,
+                back: currentView,
+                neighbors: [props.asset_id],
+                index: 0,
+            });
+        }
+    };
 
     if (query.isLoading) {
         return (
@@ -107,24 +231,154 @@ export default function MapLibreMap() {
         );
     }
 
+    // Cluster colours — light + dark theme parity. The accent ramp
+    // matches `--color-accent-{300,500,700}` from tokens.css. We pass
+    // hardcoded hex here because MapLibre's expression engine doesn't
+    // resolve CSS custom properties.
+    const accent = theme === "dark"
+        ? { lo: "#7aa2f7", mid: "#6889d8", hi: "#5169b3" }
+        : { lo: "#3a72e5", mid: "#2855c4", hi: "#1c3e9a" };
+    const ring = theme === "dark" ? "#0b0b0b" : "#ffffff";
+
     return (
         <div className="kp-map">
             <header className="kp-map-toolbar">
                 <div>
                     <h1>Map</h1>
-                    <p>{points.length.toLocaleString()} geo-tagged</p>
+                    <p>
+                        {points.length.toLocaleString()} geo-tagged
+                    </p>
                 </div>
             </header>
             <div className="kp-map-stage">
                 <MapGL
-                    initialViewState={initialView}
+                    ref={mapRef}
+                    initialViewState={{ longitude: 0, latitude: 20, zoom: 1.5 }}
                     mapStyle={theme === "dark" ? STYLE_DARK : STYLE_LIGHT}
                     style={{ width: "100%", height: "100%" }}
                     attributionControl={{ compact: true }}
+                    interactiveLayerIds={[CLUSTERS_LAYER, POINTS_LAYER]}
+                    onClick={onClick}
+                    onLoad={() => setMapLoaded(true)}
+                    cursor="grab"
                 >
                     <NavigationControl position="top-right" showCompass={false} />
+                    <Source
+                        id={SOURCE_ID}
+                        type="geojson"
+                        data={geojson}
+                        cluster
+                        clusterRadius={CLUSTER_RADIUS}
+                        clusterMaxZoom={CLUSTER_MAX_ZOOM}
+                    >
+                        {/* Cluster bubble — radius scales with point_count. */}
+                        <Layer
+                            id={CLUSTERS_LAYER}
+                            type="circle"
+                            filter={["has", "point_count"]}
+                            paint={{
+                                "circle-color": [
+                                    "step",
+                                    ["get", "point_count"],
+                                    accent.lo,
+                                    25,
+                                    accent.mid,
+                                    100,
+                                    accent.hi,
+                                ],
+                                "circle-radius": [
+                                    "step",
+                                    ["get", "point_count"],
+                                    18,
+                                    25,
+                                    24,
+                                    100,
+                                    32,
+                                ],
+                                "circle-stroke-width": 3,
+                                "circle-stroke-color": ring,
+                            }}
+                        />
+                        <Layer
+                            id={CLUSTER_COUNT_LAYER}
+                            type="symbol"
+                            filter={["has", "point_count"]}
+                            layout={{
+                                "text-field": "{point_count_abbreviated}",
+                                "text-font": ["Noto Sans Regular"],
+                                "text-size": 13,
+                                "text-allow-overlap": true,
+                            }}
+                            paint={{
+                                "text-color": "#ffffff",
+                            }}
+                        />
+                        {/* Single-photo marker — small disc at the
+                          * exact GPS coordinate. No averaging means
+                          * the dot lands on the actual photo's
+                          * location, not a centroid drift. */}
+                        <Layer
+                            id={POINTS_LAYER}
+                            type="circle"
+                            filter={["!", ["has", "point_count"]]}
+                            paint={{
+                                "circle-color": accent.mid,
+                                "circle-radius": 7,
+                                "circle-stroke-width": 2,
+                                "circle-stroke-color": ring,
+                            }}
+                        />
+                    </Source>
                 </MapGL>
             </div>
+            {selected && (
+                <div className="kp-map-sheet">
+                    <div className="kp-map-sheet-header">
+                        <strong>
+                            {selected.length} {selected.length === 1 ? "photo" : "photos"}
+                        </strong>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelected(null)}
+                        >
+                            Close
+                        </Button>
+                    </div>
+                    <div className="kp-map-sheet-grid">
+                        {selected.slice(0, 60).map((p, idx) => (
+                            <button
+                                key={p.asset_id}
+                                type="button"
+                                className="kp-map-sheet-cell"
+                                onClick={() =>
+                                    setView({
+                                        kind: "asset",
+                                        id: p.asset_id,
+                                        back: currentView,
+                                        neighbors: selected
+                                            .slice(0, 60)
+                                            .map((x) => x.asset_id),
+                                        index: idx,
+                                    })
+                                }
+                            >
+                                <ThumbImage
+                                    assetId={p.asset_id}
+                                    size={256}
+                                    mime="image/jpeg"
+                                    alt=""
+                                />
+                            </button>
+                        ))}
+                        {selected.length > 60 && (
+                            <p className="kp-map-sheet-overflow">
+                                +{selected.length - 60} more
+                            </p>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
